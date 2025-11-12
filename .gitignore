@@ -1,0 +1,60 @@
+# Environment Variables
+.env
+.env.local
+*.env
+!.env.example
+
+# Backend - Spring Boot (Java/Maven)
+backend/target/
+backend-springboot/target/
+!backend/.mvn/
+!backend-springboot/.mvn/
+!backend/.mvn/wrapper/
+!backend-springboot/.mvn/wrapper/
+!backend/mvnw
+!backend/mvnw.cmd
+!backend-springboot/mvnw
+!backend-springboot/mvnw.cmd
+backend/*.jar
+backend-springboot/*.jar
+
+# Backend - Node.js
+backend-nodejs/node_modules/
+backend-nodejs/dist/
+backend-nodejs/npm-debug.*
+backend-nodejs/yarn-error.*
+
+# Mobile (React Native)
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/npm-debug.*
+mobile/yarn-error.*
+mobile/android/build/
+mobile/android/.gradle/
+mobile/ios/Pods/
+mobile/ios/Podfile.lock
+mobile/ios/build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Documentation
+claude.md
+/claudedocs/
