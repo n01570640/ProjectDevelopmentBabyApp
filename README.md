@@ -9,10 +9,10 @@ This project includes **TWO backend implementations**. Choose the one that best 
 ## Backend Options
 
 ### Option 1: Spring Boot (Java)
-- **Location:** `backend/`
+- **Location:** `Springboot_IP/backend/`
 - **Tech:** Spring Boot 3.x, Java 17, Maven
 - **Port:** 8080
-- **Run:** `cd backend && mvn spring-boot:run`
+- **Run:** `cd Springboot_IP/backend && mvn spring-boot:run`
 
 **Choose this if:**
 - You prefer Java/enterprise-grade framework
@@ -40,9 +40,8 @@ This project includes **TWO backend implementations**. Choose the one that best 
 
 ```
 ProjectDev_BabyApp/
-├── backend/                # Spring Boot (Java) backend
-│   ├── src/
-│   ├── pom.xml
+├── Springboot_IP/          # Spring Boot (Java) backend
+│   ├── backend/
 │   └── README.md
 │
 ├── backend-nodejs/         # Express.js (Node.js) backend
@@ -52,7 +51,10 @@ ProjectDev_BabyApp/
 │   └── README.md
 │
 ├── mobile/                 # React Native app (iOS/Android)
-│   ├── src/
+│   ├── services/
+│   ├── assets/
+│   ├── App.js
+│   ├── index.js
 │   ├── package.json
 │   └── README.md
 │
@@ -63,11 +65,11 @@ ProjectDev_BabyApp/
 
 ## Mobile App
 
-- **Framework:** React Native
-- **Language:** TypeScript
+- **Framework:** React Native (Expo)
+- **Language:** JavaScript
 - **Build Tool:** npm
 
-Location: `/mobile`
+Location: `/mobile/babytracker`
 
 ## Quick Start
 
@@ -75,7 +77,7 @@ Location: `/mobile`
 
 **Spring Boot:**
 ```bash
-cd backend
+cd Springboot_IP/backend
 mvn clean install
 mvn spring-boot:run
 ```
@@ -92,7 +94,7 @@ API: `http://localhost:3000/api/v1`
 ### Mobile App
 
 ```bash
-cd mobile
+cd mobile/babytracker
 npm install
 npm start
 ```
@@ -101,7 +103,7 @@ npm start
 
 ## Configuration
 
-**Spring Boot:** Edit `backend/src/main/resources/application.properties`
+**Spring Boot:** Edit `Springboot_IP/backend/src/main/resources/application.properties`
 
 **Node.js:** Copy `.env.example` to `.env` in `backend-nodejs/`
 
@@ -111,12 +113,11 @@ You can run **both backends simultaneously** on different ports:
 - Spring Boot on port 8080
 - Node.js on port 3000
 
-Switch between them in mobile app by changing `API_BASE_URL`.
+The mobile app is currently configured to connect to Node.js on port 3000.
 
 ---
 
 For detailed documentation, see:
 - Implementation Plan: `claudedocs/implementation_plan.md`
-- Spring Boot Backend: `backend/README.md`
 - Node.js Backend: `backend-nodejs/README.md`
-- Mobile App: `mobile/README.md`
+- Mobile App: `mobile/babytracker/README.md`
