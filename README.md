@@ -2,96 +2,60 @@
 
 A cross-platform mobile application for tracking baby activities and health.
 
-## Dual Backend Architecture
+## Project Status
 
-This project includes **TWO backend implementations**. Choose the one that best fits your needs!
+**Base Structure & Configuration** - This is an initial project setup with foundational structure and configurations. Core features are not yet implemented.
 
-## Backend Options
+## Tech Stack
 
-### Option 1: Spring Boot (Java)
-- **Location:** `Springboot_IP/backend/`
-- **Tech:** Spring Boot 3.x, Java 17, Maven
-- **Port:** 8080
-- **Run:** `cd Springboot_IP/backend && mvn spring-boot:run`
-
-**Choose this if:**
-- You prefer Java/enterprise-grade framework
-- You want built-in security features (Spring Security)
-- You need strong typing and structure
-- You have Java developers on the team
-
----
-
-### Option 2: Node.js + Express (TypeScript)
-- **Location:** `backend-nodejs/`
-- **Tech:** Express.js, TypeScript, Node.js 18
-- **Port:** 3000
-- **Run:** `cd backend-nodejs && npm run dev`
-
-**Choose this if:**
-- You prefer JavaScript/TypeScript (same as React Native frontend)
-- You want faster development with hot reload
-- You want a lighter-weight solution
-- You have JavaScript developers on the team
-
----
+- **Backend:** Node.js + Express.js with TypeScript
+- **Frontend:** React Native (Expo)
+- **Language:** JavaScript/TypeScript throughout the stack
 
 ## Project Structure
 
 ```
 ProjectDev_BabyApp/
-├── Springboot_IP/          # Spring Boot (Java) backend
-│   ├── backend/
-│   └── README.md
-│
-├── backend-nodejs/         # Express.js (Node.js) backend
-│   ├── src/
+├── backend-nodejs/              # Node.js + Express backend (TypeScript)
+│   ├── src/                     # TypeScript source files
+│   ├── dist/                    # Compiled JavaScript
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── README.md
 │
-├── mobile/                 # React Native app (iOS/Android)
-│   ├── services/
-│   ├── assets/
-│   ├── App.js
-│   ├── index.js
-│   ├── package.json
-│   └── README.md
+├── mobile/
+│   └── babytracker/             # React Native mobile app (Expo)
+│       ├── .expo/               # Expo cache
+│       ├── assets/              # Images and resources
+│       ├── services/            # API services
+│       ├── App.js               # Main component
+│       ├── index.js             # Entry point
+│       ├── app.json             # Expo config
+│       ├── package.json
+│       └── README.md
 │
-├── claudedocs/            # Requirements & specifications
+├── LICENSE
 ├── .gitignore
-└── README.md              # This file
+└── README.md                    # This file
 ```
-
-## Mobile App
-
-- **Framework:** React Native (Expo)
-- **Language:** JavaScript
-- **Build Tool:** npm
-
-Location: `/mobile/babytracker`
 
 ## Quick Start
 
-### Backend (Choose One)
+### Prerequisites
+- Node.js 18+ and npm
+- Git
 
-**Spring Boot:**
-```bash
-cd Springboot_IP/backend
-mvn clean install
-mvn spring-boot:run
-```
-API: `http://localhost:8080/api/v1`
+### Backend Setup
 
-**Node.js:**
 ```bash
 cd backend-nodejs
 npm install
 npm run dev
 ```
-API: `http://localhost:3000/api/v1`
 
-### Mobile App
+API runs on: `http://localhost:3000`
+
+### Mobile App Setup
 
 ```bash
 cd mobile/babytracker
@@ -99,25 +63,37 @@ npm install
 npm start
 ```
 
----
+## Available Commands
+
+### Backend Commands
+```bash
+npm run dev          # Start development server with auto-reload
+npm run build        # Compile TypeScript to JavaScript
+npm start            # Run compiled JavaScript (production)
+npm test             # Run tests
+npm run lint         # Check code style
+npm run lint:fix     # Fix code style issues
+```
+
+### Mobile App Commands
+```bash
+npm start            # Start Expo development server
+npm run android      # Run on Android emulator
+npm run ios          # Run on iOS simulator
+npm run web          # Run in web browser
+```
 
 ## Configuration
 
-**Spring Boot:** Edit `Springboot_IP/backend/src/main/resources/application.properties`
+**Backend (Node.js):**
+- Copy `.env.example` to `.env` in `backend-nodejs/`
+- Configure environment variables (port, database, API keys, etc.)
 
-**Node.js:** Copy `.env.example` to `.env` in `backend-nodejs/`
+**Mobile App:**
+- Edit `mobile/babytracker/app.json` for Expo configuration
 
-## Testing Backends
+## Documentation
 
-You can run **both backends simultaneously** on different ports:
-- Spring Boot on port 8080
-- Node.js on port 3000
-
-The mobile app is currently configured to connect to Node.js on port 3000.
-
----
-
-For detailed documentation, see:
-- Implementation Plan: `claudedocs/implementation_plan.md`
-- Node.js Backend: `backend-nodejs/README.md`
+For detailed information, refer to:
+- Backend API: `backend-nodejs/README.md`
 - Mobile App: `mobile/babytracker/README.md`

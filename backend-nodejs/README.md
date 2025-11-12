@@ -16,15 +16,20 @@ Express.js REST API built with TypeScript for the Baby Tracking Application.
 ```
 backend-nodejs/
 ├── src/
-│   ├── config/          # Configuration (database, JWT)
+│   ├── config/          # Configuration (database, JWT, etc.)
 │   ├── controllers/     # Route handlers
 │   ├── services/        # Business logic
-│   ├── models/          # Database models
+│   ├── models/          # Data models (database schemas)
 │   ├── middleware/      # Auth, validation, error handling
 │   ├── routes/          # API route definitions
 │   ├── utils/           # Helper functions
+│   ├── types/           # TypeScript type definitions
+│   ├── constants/       # Constants and enums
+│   ├── errors/          # Custom error classes
 │   └── server.ts        # Entry point
+├── tests/               # Test files (to be created)
 ├── dist/                # Compiled JavaScript (after build)
+├── docs/                # API documentation (to be created)
 ├── package.json
 ├── tsconfig.json
 ├── .env.example
@@ -89,16 +94,24 @@ npm run lint:fix   # Fix code style issues
 
 ## API Endpoints
 
-### Health Check
+### Current Endpoints
+
+#### Health Check
 ```
 GET /api/v1/health
 ```
 
-### API Overview
+#### API Overview
 ```
 GET /api/v1
 ```
 
----
+### Planned Endpoints (Suggestive)
 
-See `claudedocs/implementation_plan.md` for detailed API specifications.
+*The following endpoints are planned and will be implemented as features are developed.*
+
+- User Management (registration, login, profile)
+- Baby Profile Management
+- Activity Tracking
+- Health Metrics
+- Notifications
