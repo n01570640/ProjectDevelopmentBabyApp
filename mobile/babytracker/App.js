@@ -20,12 +20,13 @@ export default function App() {
         <Stack.Screen
           name="Login"
           component={Login}
-          options={{ title: 'Login' }}
+          // 🔽 hide the default header here
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="SignUp"
           component={Register}
-          options={{ title: 'Sign Up' }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

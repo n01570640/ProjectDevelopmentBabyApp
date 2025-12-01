@@ -36,12 +36,10 @@ export default function Login({ navigation }: Props) {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = () => {
-    // TODO: Implement login logic
     console.log("Login pressed", { email, password, rememberMe });
   };
 
   const handleForgotPassword = () => {
-    // TODO: Navigate to forgot password screen
     console.log("Forgot password pressed");
   };
 
@@ -67,12 +65,21 @@ export default function Login({ navigation }: Props) {
         >
           {/* Header Section */}
           <View style={styles.header}>
-            <Text style={styles.title}>Baby Steps</Text>
+            <Image
+              source={require("../images/login/loginIcons.png")}
+              style={styles.headerImage}
+              resizeMode="contain"
+            />
+
+            {/* Updated text section */}
+            <Text style={styles.welcomeTitle}>Welcome Back!</Text>
+            <Text style={styles.welcomeSubtitle}>
+              Log back into your Baby Steps account
+            </Text>
           </View>
 
           {/* Input Fields */}
           <View style={styles.formContainer}>
-            <Text style={styles.subtitle}>Sign in to continue</Text>
             {/* Email Input */}
             <View style={styles.inputWrapper}>
               <View style={styles.inputContainer}>
@@ -180,6 +187,22 @@ export default function Login({ navigation }: Props) {
                 <Text style={styles.signUpLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Go Back Button */}
+            <View style={styles.goBackContainer}>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+                style={styles.goBackInner}
+              >
+                <Ionicons
+                  name="arrow-back"
+                  size={moderateScale(18)}
+                  color="#81b6eb"
+                />
+                <Text style={styles.goBackText}>Go Back</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -205,21 +228,32 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(40),
   },
   header: {
-    marginBottom: verticalScale(50),
+    marginBottom: verticalScale(40),
     alignItems: "center",
   },
-  title: {
-    fontSize: moderateScale(32),
-    fontWeight: "700",
-    color: "#81b6eb",
+  headerImage: {
+    width: width * 0.55,
+    height: height * 0.22,
+    marginBottom: verticalScale(10),
+  },
+
+  /* NEW TEXT STYLES (matches mockup) */
+  welcomeTitle: {
+    fontFamily: "RalewayBold",
+    fontSize: moderateScale(30),
+    color: "#57a8f8",
+    fontWeight: "bold",
     textAlign: "center",
   },
-  subtitle: {
-    fontSize: moderateScale(16),
-    color: "#7a7a7a",
-    fontWeight: "400",
-    marginBottom: verticalScale(20),
+  welcomeSubtitle: {
+    fontFamily: "Quicksand",
+    fontSize: moderateScale(15),
+    color: "#606162",
+    textAlign: "center",
+    marginTop: verticalScale(4),
+    marginBottom: verticalScale(6),
   },
+
   formContainer: {
     width: "100%",
   },
@@ -259,7 +293,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: verticalScale(30),
-    marginTop: verticalScale(5),
   },
   rememberMeContainer: {
     flexDirection: "row",
@@ -338,5 +371,20 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
     color: "#81b6eb",
     fontWeight: "700",
+  },
+
+  goBackContainer: {
+    marginTop: verticalScale(30),
+    alignItems: "flex-start",
+  },
+  goBackInner: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  goBackText: {
+    fontSize: moderateScale(15),
+    color: "#81b6eb",
+    fontWeight: "700",
+    marginLeft: moderateScale(6),
   },
 });

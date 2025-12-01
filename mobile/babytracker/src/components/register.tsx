@@ -9,6 +9,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image, // ✅ added so we can show the header icon
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -73,8 +74,16 @@ export default function SignUp({ navigation }: Props) {
         >
           {/* Header Section */}
           <View style={styles.header}>
-            <Text style={styles.title}>Baby Steps</Text>
-            <Text style={styles.welcomeText}>Create your account</Text>
+            <Image
+              source={require("../images/register/registerIcons.png")}
+              style={styles.headerImage}
+              resizeMode="contain"
+            />
+
+            <Text style={styles.title}>Sign Up with Us!</Text>
+            <Text style={styles.welcomeText}>
+              Create a Baby Steps account
+            </Text>
           </View>
 
           {/* Input Fields */}
@@ -236,6 +245,21 @@ export default function SignUp({ navigation }: Props) {
                 <Text style={styles.signInLink}>Sign In</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Go Back at bottom */}
+            <TouchableOpacity
+              style={styles.goBackContainer}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={moderateScale(20)}
+                color="#81b6eb"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.goBackText}>Go Back</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -263,6 +287,11 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: verticalScale(40),
     alignItems: "center",
+  },
+  headerImage: {
+    width: width * 0.55,
+    height: height * 0.22,
+    marginBottom: verticalScale(10),
   },
   title: {
     fontSize: moderateScale(32),
@@ -394,5 +423,16 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
     color: "#81b6eb",
     fontWeight: "700",
+  },
+  goBackContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: verticalScale(20),
+  },
+  goBackText: {
+    fontSize: moderateScale(16),
+    color: "#81b6eb",
+    fontWeight: "600",
   },
 });
