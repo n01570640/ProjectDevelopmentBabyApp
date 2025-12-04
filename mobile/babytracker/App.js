@@ -1,57 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import apiClient from './services/api';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+import HomeScreen from '../babytracker/screens/Homescreen';
+import CreateUserScreen from '../babytracker/screens/createUserScreen'; // you created this earlier
+
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [status, setStatus] = useState('Loading...');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checkBackendConnection();
-  }, []);
-
-  const checkBackendConnection = async () => {
-    try {
-      const data = await apiClient.get('/health');
-      setStatus(`✅ Backend Connected!\n${data.message}`);
-      setLoading(false);
-    } catch (error) {
-      setStatus(`❌ Backend Error: ${error.message}`);
-      setLoading(false);
-    }
-  };
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Hello baby</Text>
+    <NavigationContainer>
+      <Stack.Navigator>
+        
+        <Stack.Screen 
+          name="Home" 
+          component={HomeScreen} 
+          options={{ title: "Baby Tracker" }}
+        />
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#007AFF" />
-      ) : (
-        <Text style={styles.status}>{status}</Text>
-      )}
-    </View>
+        <Stack.Screen 
+          name="CreateUser" 
+          component={CreateUserScreen}
+          options={{ title: "Create User" }}
+        />
+
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 30,
-  },
-  status: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 20,
-  },
-});
