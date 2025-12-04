@@ -1,57 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import apiClient from './services/api';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+import Landing from './src/components/landing';
+import Login from './src/components/login';
+import Register from './src/components/register';
+
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [status, setStatus] = useState('Loading...');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checkBackendConnection();
-  }, []);
-
-  const checkBackendConnection = async () => {
-    try {
-      const data = await apiClient.get('/health');
-      setStatus(`✅ Backend Connected!\n${data.message}`);
-      setLoading(false);
-    } catch (error) {
-      setStatus(`❌ Backend Error: ${error.message}`);
-      setLoading(false);
-    }
-  };
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Hello baby</Text>
-
-      {loading ? (
-        <ActivityIndicator size="large" color="#007AFF" />
-      ) : (
-        <Text style={styles.status}>{status}</Text>
-      )}
-    </View>
+    <NavigationContainer>
+      <Stack.Navigator initialRouteName="Landing">
+        <Stack.Screen
+          name="Landing"
+          component={Landing}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Login"
+          component={Login}
+          // 🔽 hide the default header here
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SignUp"
+          component={Register}
+          options={{ headerShown: false }}
+        />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 30,
-  },
-  status: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 20,
-  },
-});
