@@ -1,7 +1,11 @@
 import express from "express";
 import { createUser } from "../services/user.service";
+import { verifyTokenMiddleware } from "../middleware/auth.middleware";
 
 const router = express.Router();
+
+// All user routes require authentication
+router.use(verifyTokenMiddleware);
 
 router.post("/", async (req, res) => {
   try {

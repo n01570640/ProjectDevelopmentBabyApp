@@ -1,13 +1,13 @@
 import { getDb } from "../db";
 import { CreateUserDTO, UserDTO } from "../dtos/user.dto";
 import sql from "mssql";
-import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 export async function createUser(data: CreateUserDTO): Promise<UserDTO> {
   const db = await getDb();
 
-  // Hash password
-  const hashedPassword = crypto.createHash("sha256").update(data.password).digest();
+  // Hash password with bcrypt
+  const hashedPassword = await bcrypt.hash(data.password, 10);
 
   const result = await db.request()
     .input("email", sql.NVarChar(255), data.email)
