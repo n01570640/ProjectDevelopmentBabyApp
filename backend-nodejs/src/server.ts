@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { getDb } from './db';
 import userRoutes from "./routes/user.routes";
+import authRoutes from "./routes/auth.routes";
 
 // Load environment variables
 dotenv.config();
@@ -30,6 +31,7 @@ app.use(express.urlencoded({ extended: true }));
 // ------------------------------------------------------------
 // ROUTES
 // ------------------------------------------------------------
+app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 
 // SQL test route

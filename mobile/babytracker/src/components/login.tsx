@@ -10,9 +10,11 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { loginUser } from "../../services/authService";
 
 const { width, height } = Dimensions.get("window");
 
@@ -34,9 +36,58 @@ export default function Login({ navigation }: Props) {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = () => {
-    console.log("Login pressed", { email, password, rememberMe });
+  // Validate email format
+  const isValidEmail = (emailValue: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(emailValue);
+  };
+
+  const handleLogin = async () => {
+    // Clear previous errors
+    setError("");
+
+    // Validate required fields
+    if (!email.trim()) {
+      setError("Email is required");
+      return;
+    }
+
+    // Validate email format
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    if (!password) {
+      setError("Password is required");
+      return;
+    }
+
+    // All validation passed, call API
+    setLoading(true);
+    try {
+      const response = await loginUser(email, password);
+      setLoading(false);
+
+      if (response.success) {
+        // Login successful
+        Alert.alert(
+          "Success!",
+          "You have logged in successfully.",
+          [{ text: "OK", onPress: () => console.log("User logged in") }]
+        );
+      } else {
+        // Show error from backend
+        setError(response.message || "Login failed. Please try again.");
+      }
+    } catch (err) {
+      setLoading(false);
+      setError("An error occurred. Please try again.");
+      console.error("Login error:", err);
+    }
   };
 
   const handleForgotPassword = () => {
@@ -134,6 +185,13 @@ export default function Login({ navigation }: Props) {
               </View>
             </View>
 
+            {/* Error Message Display */}
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
             {/* Remember Me & Forgot Password Row */}
             <View style={styles.optionsRow}>
               <TouchableOpacity
@@ -167,7 +225,8 @@ export default function Login({ navigation }: Props) {
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={handleLogin}
-                style={styles.buttonTapArea}
+                disabled={loading}
+                style={[styles.buttonTapArea, loading && styles.buttonDisabled]}
               >
                 <LinearGradient
                   colors={["#8ec6ff", "#81b6eb"]}
@@ -386,5 +445,22 @@ const styles = StyleSheet.create({
     color: "#81b6eb",
     fontWeight: "700",
     marginLeft: moderateScale(6),
+  },
+  errorContainer: {
+    backgroundColor: "#fce4e4",
+    borderLeftColor: "#ff6b6b",
+    borderLeftWidth: 4,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(15),
+  },
+  errorText: {
+    fontSize: moderateScale(13),
+    color: "#c92a2a",
+    fontWeight: "500",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });

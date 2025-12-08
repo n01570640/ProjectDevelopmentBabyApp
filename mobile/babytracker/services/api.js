@@ -32,11 +32,18 @@ const apiClient = {
         body: JSON.stringify(data),
       });
 
+      const responseBody = await response.json();
+
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
+        // Extract error message from backend response
+        const errorMessage = responseBody.message || `API Error: ${response.status}`;
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        error.response = responseBody;
+        throw error;
       }
 
-      return await response.json();
+      return responseBody;
     } catch (error) {
       console.error(`POST ${endpoint} failed:`, error);
       throw error;

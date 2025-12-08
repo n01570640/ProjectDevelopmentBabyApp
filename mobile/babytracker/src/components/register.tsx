@@ -10,9 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image, // ✅ added so we can show the header icon
+  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { registerUser } from "../../services/authService";
 
 const { width, height } = Dimensions.get("window");
 
@@ -39,6 +41,8 @@ export default function SignUp({ navigation }: Props) {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -47,9 +51,84 @@ export default function SignUp({ navigation }: Props) {
     }));
   };
 
-  const handleSignUp = () => {
-    // TODO: Implement registration logic
-    console.log("Sign up pressed", { ...formData, acceptTerms });
+  // Validate email format
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const handleSignUp = async () => {
+    // Clear previous errors
+    setError("");
+
+    // Validate required fields
+    if (!formData.fullName.trim()) {
+      setError("Full name is required");
+      return;
+    }
+
+    if (!formData.email.trim()) {
+      setError("Email is required");
+      return;
+    }
+
+    // Validate email format
+    if (!isValidEmail(formData.email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    if (!formData.password) {
+      setError("Password is required");
+      return;
+    }
+
+    // Validate password length (min 8 characters)
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters long");
+      return;
+    }
+
+    // Check passwords match
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    // Check terms accepted
+    if (!acceptTerms) {
+      setError("You must accept the Terms of Service and Privacy Policy");
+      return;
+    }
+
+    // All validation passed, call API
+    setLoading(true);
+    try {
+      const response = await registerUser({
+        fullName: formData.fullName,
+        email: formData.email,
+        password: formData.password,
+        phone: "",
+      });
+
+      setLoading(false);
+
+      if (response.success) {
+        // Registration successful
+        Alert.alert(
+          "Success!",
+          "Your account has been created successfully.",
+          [{ text: "OK", onPress: () => navigation.navigate("Login") }]
+        );
+      } else {
+        // Show error from backend
+        setError(response.message || "Registration failed. Please try again.");
+      }
+    } catch (err) {
+      setLoading(false);
+      setError("An error occurred. Please try again.");
+      console.error("Registration error:", err);
+    }
   };
 
   const handleSignIn = () => {
@@ -219,13 +298,21 @@ export default function SignUp({ navigation }: Props) {
               </TouchableOpacity>
             </View>
 
+            {/* Error Message Display */}
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
             {/* Sign Up Button */}
             <View style={styles.buttonWrapper}>
               <View style={styles.buttonBehindPill} />
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={handleSignUp}
-                style={styles.buttonTapArea}
+                disabled={loading}
+                style={[styles.buttonTapArea, loading && styles.buttonDisabled]}
               >
                 <LinearGradient
                   colors={["#8ec6ff", "#81b6eb"]}
@@ -434,5 +521,22 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(16),
     color: "#81b6eb",
     fontWeight: "600",
+  },
+  errorContainer: {
+    backgroundColor: "#fce4e4",
+    borderLeftColor: "#ff6b6b",
+    borderLeftWidth: 4,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(15),
+  },
+  errorText: {
+    fontSize: moderateScale(13),
+    color: "#c92a2a",
+    fontWeight: "500",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });

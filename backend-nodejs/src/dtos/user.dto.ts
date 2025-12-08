@@ -13,3 +13,9 @@ export interface UserDTO {
   created_at: string;
   is_active: boolean;
 }
+
+// Internal use only - includes password_hash for authentication
+// Never send this to frontend/client
+export interface UserWithPasswordDTO extends UserDTO {
+  password_hash: Buffer | string;
+}
