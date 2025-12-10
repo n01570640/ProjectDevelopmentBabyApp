@@ -1,6 +1,7 @@
 import express, { Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { getDb } from './db';
 import userRoutes from "./routes/user.routes";
@@ -25,6 +26,7 @@ app.use(cors({
 app.options("*", cors());
 
 app.use(helmet());
+app.use(morgan('dev')); // HTTP request logging
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
