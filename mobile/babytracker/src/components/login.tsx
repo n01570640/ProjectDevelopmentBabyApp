@@ -79,6 +79,7 @@ export default function Login({ navigation }: Props) {
           "You have logged in successfully.",
           [{ text: "OK", onPress: () => console.log("User logged in") }]
         );
+        navigation.replace("Children");
       } else {
         // Show error from backend
         setError(response.message || "Login failed. Please try again.");
@@ -238,6 +239,7 @@ export default function Login({ navigation }: Props) {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
+            
 
             {/* Sign Up Link */}
             <View style={styles.signUpContainer}>
@@ -246,6 +248,41 @@ export default function Login({ navigation }: Props) {
                 <Text style={styles.signUpLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
+
+
+
+            <View style={{ marginTop: verticalScale(15), alignItems: "center" }}>
+  <TouchableOpacity
+    activeOpacity={0.9}
+    onPress={() => navigation.replace("Children")}
+  >
+    <LinearGradient
+      colors={["#8ec6ff", "#81b6eb"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{
+        width: BUTTON_WIDTH,
+        height: BUTTON_HEIGHT,
+        borderRadius: BUTTON_RADIUS,
+        justifyContent: "center",
+        alignItems: "center",
+        marginTop: verticalScale(10),
+      }}
+    >
+      <Text
+        style={{
+          fontSize: moderateScale(16),
+          fontWeight: "700",
+          color: "#fff",
+          letterSpacing: 0.5,
+        }}
+      >
+        Skip Login
+      </Text>
+    </LinearGradient>
+  </TouchableOpacity>
+</View>
+
 
             {/* Go Back Button */}
             <View style={styles.goBackContainer}>
