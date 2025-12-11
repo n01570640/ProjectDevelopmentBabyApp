@@ -77,7 +77,7 @@ export default function Login({ navigation }: Props) {
         Alert.alert(
           "Success!",
           "You have logged in successfully.",
-          [{ text: "OK", onPress: () => console.log("User logged in") }]
+          [{ text: "OK", onPress: () => navigation.replace("Children") }]
         );
       } else {
         // Show error from backend
