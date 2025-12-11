@@ -1,10 +1,11 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-import Landing from './src/components/landing';
-import Login from './src/components/login';
-import Register from './src/components/register';
+import Landing from "./src/components/landing";
+import Login from "./src/components/login";
+import Register from "./src/components/register";
+import Children from "./src/components/children"; // 👈 lowercase filename, default export is Children
 
 const Stack = createNativeStackNavigator();
 
@@ -20,12 +21,16 @@ export default function App() {
         <Stack.Screen
           name="Login"
           component={Login}
-          // 🔽 hide the default header here
           options={{ headerShown: false }}
         />
         <Stack.Screen
           name="SignUp"
           component={Register}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Children"
+          component={Children}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

@@ -1,37 +1,13 @@
-import { Platform } from "react-native";
-import Constants from "expo-constants";
-
-// =========================================================
-// PLATFORM + ENVIRONMENT AUTO-DETECTION
-// =========================================================
-
-// Detect Android Emulator (Maps to host machine's localhost)
-const isAndroidEmulator =
-  Platform.OS === "android" && Constants.isDevice === false;
-
-// Hardcode your machine's IPv4 for iOS simulator + devices
-const LOCAL_IPV4 = "192.168.14.184";
-
-// Determine which BASE URL to use
-const API_BASE_URL = isAndroidEmulator
-  ? "http://10.0.2.2:3000/api/v1"                 // Android Emulator
-  : Platform.OS === "ios"
-  ? `http://${LOCAL_IPV4}:3000/api/v1`            // iOS Simulator + devices
-  : "http://localhost:3000/api/v1";               // Web fallback
-
-console.log("📡 Using API Base URL:", API_BASE_URL);
-
-// =========================================================
-// HTTP CLIENT
-// =========================================================
+// Simple HTTP client for API calls
+const API_BASE_URL = 'http://10.0.2.2:3000/api/v1';
 
 const apiClient = {
   async get(endpoint) {
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: "GET",
+        method: 'GET',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
       });
 
@@ -49,9 +25,9 @@ const apiClient = {
   async post(endpoint, data) {
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
       });
@@ -59,8 +35,8 @@ const apiClient = {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        const errorMessage =
-          responseBody.message || `API Error: ${response.status}`;
+        // Extract error message from backend response
+        const errorMessage = responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
