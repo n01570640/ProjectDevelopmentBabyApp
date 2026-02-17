@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   Image,
   Dimensions,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import NavBar from "./navBar";
+import { getBabies } from "../../services/babyService";
 
 const { width, height } = Dimensions.get("window");
 
@@ -26,47 +28,132 @@ type Props = {
   navigation: any;
 };
 
-type ChildProfile = {
-  id: number;
-  name: string;
-  gender: "male" | "female";
-  birthDate: string;
-  heightCm: number;
-  heightFt: string;
-  weightKg: number;
-  weightLbs: string;
-  guardian: string;
-  image: any;
+// =============================================================================
+// OLD HARDCODED DATA - COMMENTED OUT (keeping for reference)
+// =============================================================================
+// type ChildProfile = {
+//   id: number;
+//   name: string;
+//   gender: "male" | "female";
+//   birthDate: string;
+//   heightCm: number;
+//   heightFt: string;
+//   weightKg: number;
+//   weightLbs: string;
+//   guardian: string;
+//   image: any;
+// };
+
+// const childrenData: ChildProfile[] = [
+//   {
+//     id: 1,
+//     name: "Charlie",
+//     gender: "male",
+//     birthDate: "October 14, 2024",
+//     heightCm: 35,
+//     heightFt: "1.78 ft",
+//     weightKg: 10.7,
+//     weightLbs: "22.5 lbs",
+//     guardian: "Layla Nguyen",
+//     image: require("../images/children/charlie.jpg"),
+//   },
+//   {
+//     id: 2,
+//     name: "Michael",
+//     gender: "male",
+//     birthDate: "May 8, 2024",
+//     heightCm: 55,
+//     heightFt: "2.87 ft",
+//     weightKg: 15.6,
+//     weightLbs: "33.2 lbs",
+//     guardian: "Layla Nguyen",
+//     image: require("../images/children/michael.png"),
+//   },
+// ];
+// =============================================================================
+
+// NEW: Type matching API response (BabyWithDetailsDTO)
+type LatestGrowth = {
+  weight_kg: number | null;
+  length_cm: number | null;
+  head_circum_cm: number | null;
+  recorded_at: string | null;
 };
 
-const childrenData: ChildProfile[] = [
-  {
-    id: 1,
-    name: "Charlie",
-    gender: "male",
-    birthDate: "October 14, 2024",
-    heightCm: 35,
-    heightFt: "1.78 ft",
-    weightKg: 10.7,
-    weightLbs: "22.5 lbs",
-    guardian: "Layla Nguyen",
-    image: require("../images/children/charlie.jpg"),
-  },
-  {
-    id: 2,
-    name: "Michael",
-    gender: "male",
-    birthDate: "May 8, 2024",
-    heightCm: 55,
-    heightFt: "2.87 ft",
-    weightKg: 15.6,
-    weightLbs: "33.2 lbs",
-    guardian: "Layla Nguyen",
-    image: require("../images/children/michael.png"),
-  },
-];
+type BabyProfile = {
+  baby_id: number;
+  display_name: string;
+  date_of_birth: string;
+  sex: "male" | "female" | null;
+  blood_type: string | null;
+  notes: string | null;
+  created_at: string;
+  access_role: string;
+  can_edit_health: boolean;
+  can_edit_activities: boolean;
+  can_share: boolean;
+  latest_growth: LatestGrowth | null;
+  primary_caregiver_name: string | null;
+};
+
+// Helper functions for unit conversion
+const cmToFeet = (cm: number | null): string => {
+  if (cm === null) return "N/A";
+  return (cm / 30.48).toFixed(2) + " ft";
+};
+
+const kgToLbs = (kg: number | null): string => {
+  if (kg === null) return "N/A";
+  return (kg * 2.205).toFixed(1) + " lbs";
+};
+
+// Format date for display (e.g., "2024-10-14" -> "October 14, 2024")
+const formatBirthDate = (dateString: string): string => {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    return dateString;
+  }
+};
+
+// Placeholder image for babies without photos
+const placeholderImage = require("../images/children/charlie.jpg");
 
 export default function Children({ navigation }: Props) {
+  // State for API data
+  const [babies, setBabies] = useState<BabyProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch babies on mount
+  useEffect(() => {
+    fetchBabies();
+  }, []);
+
+  const fetchBabies = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await getBabies();
+
+      if (response.success) {
+        setBabies(response.data || []);
+      } else {
+        setError(response.message || "Failed to load children");
+      }
+    } catch (err: any) {
+      console.error("Error fetching babies:", err);
+      setError("Failed to load children. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.inner}>
@@ -90,98 +177,140 @@ export default function Children({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Cards */}
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {childrenData.map((child) => (
-            <View key={child.id} style={styles.card}>
-              <Image source={child.image} style={styles.cardImage} />
+        {/* Loading state */}
+        {loading && (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#81b6eb" />
+            <Text style={styles.loadingText}>Loading children...</Text>
+          </View>
+        )}
 
-              <View style={styles.cardBody}>
-                {/* Name + date */}
-                <View style={styles.nameRow}>
-                  <View style={styles.nameLeft}>
-                    <Text style={styles.childName}>{child.name}</Text>
-                    <Ionicons
-                      name={
-                        child.gender === "male"
-                          ? "male-outline"
-                          : "female-outline"
-                      }
-                      size={moderateScale(20)}
-                      color="#57a8f8"
-                      style={styles.genderIcon}
-                    />
-                  </View>
+        {/* Error state */}
+        {!loading && error && (
+          <View style={styles.centerContainer}>
+            <Ionicons name="alert-circle-outline" size={48} color="#ff6b6b" />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchBabies}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-                  <View style={styles.dateRow}>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={moderateScale(16)}
-                      color="#606162"
-                    />
-                    <Text style={styles.dateText}>{child.birthDate}</Text>
-                  </View>
-                </View>
+        {/* Empty state */}
+        {!loading && !error && babies.length === 0 && (
+          <View style={styles.centerContainer}>
+            <Ionicons name="people-outline" size={48} color="#b2b8c3" />
+            <Text style={styles.emptyText}>No children added yet</Text>
+            <Text style={styles.emptySubtext}>
+              Tap the + button to add your first child
+            </Text>
+          </View>
+        )}
 
-                {/* Details */}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Height: </Text>
-                  <Text style={styles.detailValue}>
-                    {child.heightCm}cm, {child.heightFt}
-                  </Text>
-                </View>
+        {/* Cards - Now using API data */}
+        {!loading && !error && babies.length > 0 && (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {babies.map((baby) => (
+              <View key={baby.baby_id} style={styles.card}>
+                <Image source={placeholderImage} style={styles.cardImage} />
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Weight: </Text>
-                  <Text style={styles.detailValue}>
-                    {child.weightKg} kg, {child.weightLbs}
-                  </Text>
-                </View>
+                <View style={styles.cardBody}>
+                  {/* Name + date */}
+                  <View style={styles.nameRow}>
+                    <View style={styles.nameLeft}>
+                      <Text style={styles.childName}>{baby.display_name}</Text>
+                      {baby.sex && (
+                        <Ionicons
+                          name={
+                            baby.sex === "male"
+                              ? "male-outline"
+                              : "female-outline"
+                          }
+                          size={moderateScale(20)}
+                          color="#57a8f8"
+                          style={styles.genderIcon}
+                        />
+                      )}
+                    </View>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Guardian: </Text>
-                  <Text style={styles.detailValue}>{child.guardian}</Text>
-                </View>
-
-                {/* Buttons */}
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    style={styles.viewButtonTap}
-                    onPress={() =>
-                      navigation.navigate("ChildDetails", { id: child.id })
-                    }
-                  >
-                    <View style={styles.viewButton}>
-                      <Text style={styles.viewButtonText}>
-                        View information
+                    <View style={styles.dateRow}>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={moderateScale(16)}
+                        color="#606162"
+                      />
+                      <Text style={styles.dateText}>
+                        {formatBirthDate(baby.date_of_birth)}
                       </Text>
                     </View>
-                  </TouchableOpacity>
+                  </View>
 
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    activeOpacity={0.85}
-                    onPress={() =>
-                      navigation.navigate("EditChild", { id: child.id })
-                    }
-                  >
-                    <Ionicons
-                      name="settings-outline"
-                      size={moderateScale(18)}
-                      color="#4f6175"
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text style={styles.editText}>Edit</Text>
-                  </TouchableOpacity>
+                  {/* Details - Using latest_growth from API */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Height: </Text>
+                    <Text style={styles.detailValue}>
+                      {baby.latest_growth?.length_cm
+                        ? `${baby.latest_growth.length_cm}cm, ${cmToFeet(baby.latest_growth.length_cm)}`
+                        : "Not recorded"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Weight: </Text>
+                    <Text style={styles.detailValue}>
+                      {baby.latest_growth?.weight_kg
+                        ? `${baby.latest_growth.weight_kg} kg, ${kgToLbs(baby.latest_growth.weight_kg)}`
+                        : "Not recorded"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Guardian: </Text>
+                    <Text style={styles.detailValue}>
+                      {baby.primary_caregiver_name || "Not assigned"}
+                    </Text>
+                  </View>
+
+                  {/* Buttons */}
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={styles.viewButtonTap}
+                      onPress={() =>
+                        navigation.navigate("ChildDetails", { id: baby.baby_id })
+                      }
+                    >
+                      <View style={styles.viewButton}>
+                        <Text style={styles.viewButtonText}>
+                          View information
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        navigation.navigate("EditChild", { id: baby.baby_id })
+                      }
+                    >
+                      <Ionicons
+                        name="settings-outline"
+                        size={moderateScale(18)}
+                        color="#4f6175"
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text style={styles.editText}>Edit</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
+        )}
 
         {/* FAB */}
         <TouchableOpacity
@@ -213,6 +342,48 @@ const styles = StyleSheet.create({
     paddingTop: verticalScale(40),
     paddingHorizontal: width * 0.05,
     paddingBottom: verticalScale(110), // space above navbar
+  },
+  // Loading, Error, Empty states
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: moderateScale(16),
+    color: "#606162",
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: moderateScale(16),
+    color: "#ff6b6b",
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    backgroundColor: "#81b6eb",
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: "#ffffff",
+    fontSize: moderateScale(14),
+    fontWeight: "600",
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: moderateScale(18),
+    color: "#606162",
+    fontWeight: "600",
+  },
+  emptySubtext: {
+    marginTop: 6,
+    fontSize: moderateScale(14),
+    color: "#b2b8c3",
+    textAlign: "center",
   },
   searchRow: {
     flexDirection: "row",
