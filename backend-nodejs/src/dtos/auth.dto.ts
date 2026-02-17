@@ -6,6 +6,7 @@ export interface RegisterDTO {
   password: string;
   full_name: string;
   phone?: string;
+  invitation_token?: string;
 }
 
 // Data for user login

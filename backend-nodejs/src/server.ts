@@ -6,6 +6,11 @@ import dotenv from 'dotenv';
 import { getDb } from './db';
 import userRoutes from "./routes/user.routes";
 import authRoutes from "./routes/auth.routes";
+import babyRoutes from "./routes/baby.routes";
+import invitationRoutes from "./routes/invitation.routes";
+import guidelineRoutes from "./routes/guideline.routes";
+import vaccinationRoutes from "./routes/vaccination.routes";
+import growthRoutes from "./routes/growth.routes";
 
 // Load environment variables
 dotenv.config();
@@ -35,6 +40,11 @@ app.use(express.urlencoded({ extended: true }));
 // ------------------------------------------------------------
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/babies", babyRoutes);
+app.use("/api/v1/babies", vaccinationRoutes); // Handles /babies/:babyId/vaccinations
+app.use("/api/v1/babies", growthRoutes); // Handles /babies/:babyId/growth
+app.use("/api/v1", invitationRoutes); // Handles both /babies/:babyId/invitations and /invitations/:token
+app.use("/api/v1/guidelines", guidelineRoutes);
 
 // SQL test route
 app.get('/api/v1/test-db', async (req, res) => {
@@ -75,7 +85,9 @@ app.get('/api/v1', (req, res) => {
       auth: '/api/v1/auth',
       users: '/api/v1/users',
       babies: '/api/v1/babies',
-      activities: '/api/v1/activities',
+      vaccinations: '/api/v1/babies/:babyId/vaccinations',
+      invitations: '/api/v1/babies/:babyId/invitations',
+      guidelines: '/api/v1/guidelines',
       health: '/api/v1/health',
       test_db: '/api/v1/test-db'
     }

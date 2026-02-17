@@ -9,8 +9,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Image, // ✅ added so we can show the header icon
-  Alert,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,6 +42,7 @@ export default function SignUp({ navigation }: Props) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -114,12 +114,12 @@ export default function SignUp({ navigation }: Props) {
       setLoading(false);
 
       if (response.success) {
-        // Registration successful
-        Alert.alert(
-          "Success!",
-          "Your account has been created successfully.",
-          [{ text: "OK", onPress: () => navigation.navigate("Login") }]
-        );
+        // Registration successful - show in-page message
+        setSuccessMessage("Your account has been created successfully!");
+        setError("");
+        setTimeout(() => {
+          navigation.navigate("Login");
+        }, 2000);
       } else {
         // Show error from backend
         setError(response.message || "Registration failed. Please try again.");
@@ -297,6 +297,13 @@ export default function SignUp({ navigation }: Props) {
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* Success Message Display */}
+            {successMessage ? (
+              <View style={styles.successContainer}>
+                <Text style={styles.successText}>{successMessage}</Text>
+              </View>
+            ) : null}
 
             {/* Error Message Display */}
             {error ? (
@@ -521,6 +528,20 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(16),
     color: "#81b6eb",
     fontWeight: "600",
+  },
+  successContainer: {
+    backgroundColor: "#e6f9e6",
+    borderLeftColor: "#4caf50",
+    borderLeftWidth: 4,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(15),
+  },
+  successText: {
+    fontSize: moderateScale(13),
+    color: "#2e7d32",
+    fontWeight: "500",
   },
   errorContainer: {
     backgroundColor: "#fce4e4",

@@ -10,7 +10,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -73,12 +72,8 @@ export default function Login({ navigation }: Props) {
       setLoading(false);
 
       if (response.success) {
-        // Login successful
-        Alert.alert(
-          "Success!",
-          "You have logged in successfully.",
-          [{ text: "OK", onPress: () => navigation.replace("Children") }]
-        );
+        // Login successful - navigate directly to Children
+        navigation.replace("Children");
       } else {
         // Show error from backend
         setError(response.message || "Login failed. Please try again.");
