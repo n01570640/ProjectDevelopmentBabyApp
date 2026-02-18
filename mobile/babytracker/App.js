@@ -6,6 +6,8 @@ import Landing from "./src/components/landing";
 import Login from "./src/components/login";
 import Register from "./src/components/register";
 import Children from "./src/components/children"; // 👈 lowercase filename, default export is Children
+import ProfileScreen from "./src/components/ProfileScreen";
+import HistoryScreen from "./src/components/HistoryScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -31,6 +33,16 @@ export default function App() {
         <Stack.Screen
           name="Children"
           component={Children}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="History"
+          component={HistoryScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

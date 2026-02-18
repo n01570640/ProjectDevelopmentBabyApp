@@ -7,7 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // =========================================================
 
 // Your machine's IPv4 (for physical devices on same WiFi)
-const LOCAL_IPV4 = "192.168.2.37";
+const LOCAL_IPV4 = "192.168.0.19";
 
 // Determine which BASE URL to use
 const getApiBaseUrl = () => {
@@ -64,7 +64,8 @@ const apiClient = {
 
       if (!response.ok) {
         const responseBody = await response.json().catch(() => ({}));
-        const errorMessage = responseBody.message || `API Error: ${response.status}`;
+        const errorMessage =
+          responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
@@ -97,7 +98,8 @@ const apiClient = {
 
       if (!response.ok) {
         // Extract error message from backend response
-        const errorMessage = responseBody.message || `API Error: ${response.status}`;
+        const errorMessage =
+          responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
@@ -126,7 +128,8 @@ const apiClient = {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        const errorMessage = responseBody.message || `API Error: ${response.status}`;
+        const errorMessage =
+          responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
@@ -154,7 +157,8 @@ const apiClient = {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        const errorMessage = responseBody.message || `API Error: ${response.status}`;
+        const errorMessage =
+          responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
