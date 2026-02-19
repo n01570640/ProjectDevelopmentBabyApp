@@ -4,7 +4,15 @@ export interface CreateTaskDTO {
     assigned_to?: number | null;
     title: string;
     description?: string | null;
-    due_at?: string | null;
+    due_at?: Date | null;
+    status?: string | null;
+}
+
+export interface UpdateTaskDTO {
+    assigned_to?: number | null;
+    title?: string;
+    description?: string | null;
+    due_at?: Date | null;
     status?: string | null;
 }
 
@@ -15,6 +23,6 @@ export interface TaskDTO {
     assigned_to: number | null;
     title: string;
     description: string | null;
-    due_at: string | null;
+    due_at: Date | null;
     status: string | null;
 }

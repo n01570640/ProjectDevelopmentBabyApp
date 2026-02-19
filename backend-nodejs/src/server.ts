@@ -11,6 +11,9 @@ import invitationRoutes from "./routes/invitation.routes";
 import guidelineRoutes from "./routes/guideline.routes";
 import vaccinationRoutes from "./routes/vaccination.routes";
 import growthRoutes from "./routes/growth.routes";
+import activityRoutes from "./routes/activity.routes";
+import taskRoutes from "./routes/task.routes";
+import reminderRoutes from "./routes/reminder.routes";
 
 // Load environment variables
 dotenv.config();
@@ -42,7 +45,10 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/babies", babyRoutes);
 app.use("/api/v1/babies", vaccinationRoutes); // Handles /babies/:babyId/vaccinations
-app.use("/api/v1/babies", growthRoutes); // Handles /babies/:babyId/growth
+app.use("/api/v1/babies", growthRoutes);       // /babies/:babyId/growth
+app.use("/api/v1/babies", activityRoutes);     // /babies/:babyId/activities
+app.use("/api/v1/babies", taskRoutes);         // /babies/:babyId/tasks
+app.use("/api/v1/babies", reminderRoutes);     // /babies/:babyId/reminders
 app.use("/api/v1", invitationRoutes); // Handles both /babies/:babyId/invitations and /invitations/:token
 app.use("/api/v1/guidelines", guidelineRoutes);
 
