@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   TextInput,
   Alert,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Baby } from "../types/baby.types";
 import NavBar from "./navBar";
+import { getBabies } from "../../services/babyService";
 
 interface ShareModalProps {
   baby: Baby | null;
@@ -224,33 +226,43 @@ export default function ProfileScreen({ navigation }: any) {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [babyImages, setBabyImages] = useState<{ [key: number]: string }>({});
 
-  // Demo data
-  const babies: Baby[] = [
-    {
-      id: 1,
-      name: "Emma Johnson",
-      dob: "2025-04-03",
-      sex: "F",
-      role: "PRIMARY",
-      canShare: true,
-    },
-    {
-      id: 2,
-      name: "Noah Johnson",
-      dob: "2024-10-11",
-      sex: "M",
-      role: "SECONDARY",
-      canShare: false,
-    },
-    {
-      id: 3,
-      name: "Olivia Smith",
-      dob: "2023-06-19",
-      sex: "F",
-      role: "SECONDARY",
-      canShare: false,
-    },
-  ];
+  // ── Live API data
+  const [babies, setBabies] = useState<Baby[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchBabies = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getBabies();
+      if (res?.success && Array.isArray(res.data)) {
+        // Map BabyWithDetailsDTO → Baby (local type)
+        const mapped: Baby[] = res.data.map((b: any) => ({
+          id: b.baby_id,
+          name: b.display_name,
+          dob: b.date_of_birth?.slice(0, 10) ?? "",
+          sex: b.sex === "male" ? "M" : b.sex === "female" ? "F" : b.sex ?? "—",
+          role: b.access_role === "PRIMARY_CAREGIVER" ? "PRIMARY" : "SECONDARY",
+          canShare: b.can_share ?? false,
+        }));
+        setBabies(mapped);
+      }
+    } catch (e) {
+      console.error("ProfileScreen: failed to fetch babies", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchBabies();
+  }, [fetchBabies]);
+
+  // Re-fetch whenever this screen comes into focus (e.g. after AddChild)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", fetchBabies);
+    return unsubscribe;
+  }, [navigation, fetchBabies]);
 
   const handleViewHistory = (baby: Baby) => {
     setSelectedBaby(baby);
@@ -326,9 +338,46 @@ export default function ProfileScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>My Babies</Text>
+        {/* Title row with Add button */}
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>My Babies</Text>
+          <TouchableOpacity
+            style={styles.addBabyBtn}
+            onPress={() => navigation.navigate("AddChild")}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={20} color="#fff" />
+            <Text style={styles.addBabyBtnText}>Add Baby</Text>
+          </TouchableOpacity>
+        </View>
 
-        {babies.map((baby) => (
+        {/* Loading */}
+        {loading && (
+          <View style={styles.centeredState}>
+            <ActivityIndicator size="large" color="#81b6eb" />
+            <Text style={styles.stateText}>Loading babies...</Text>
+          </View>
+        )}
+
+        {/* Empty state */}
+        {!loading && babies.length === 0 && (
+          <View style={styles.centeredState}>
+            <Ionicons name="people-outline" size={52} color="#c0d4e8" />
+            <Text style={styles.stateText}>No babies added yet</Text>
+            <TouchableOpacity
+              style={styles.addBabyBtnLarge}
+              onPress={() => navigation.navigate("AddChild")}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={styles.addBabyBtnText}>Add your first baby</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Baby cards */}
+        {!loading &&
+          babies.map((baby) => (
           <View key={baby.id} style={styles.card}>
             <View style={styles.cardTop}>
               <TouchableOpacity
@@ -373,10 +422,17 @@ export default function ProfileScreen({ navigation }: any) {
 
             <View style={styles.actions}>
               <TouchableOpacity
+                style={[styles.actionButton, styles.actionButtonPrimary]}
+                onPress={() => navigation.navigate("BabyDetail", { babyId: baby.id })}
+              >
+                <Text style={styles.actionButtonText}>View Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={styles.actionButton}
                 onPress={() => handleViewHistory(baby)}
               >
-                <Text style={styles.actionButtonText}>View History</Text>
+                <Text style={styles.actionButtonText}>History</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -431,13 +487,52 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 100, // Space for navbar
+    paddingBottom: 100,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
   },
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    marginBottom: 20,
     color: "#555",
+  },
+  addBabyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#81b6eb",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addBabyBtnLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#81b6eb",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 16,
+  },
+  addBabyBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  centeredState: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  stateText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#aaa",
+    fontWeight: "500",
   },
   card: {
     backgroundColor: "#fff",
@@ -532,6 +627,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 6,
+  },
+  actionButtonPrimary: {
+    backgroundColor: "#4A90D9",
   },
   actionButtonText: {
     color: "#fff",

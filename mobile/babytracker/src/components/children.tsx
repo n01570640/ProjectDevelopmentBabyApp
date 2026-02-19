@@ -130,10 +130,15 @@ export default function Children({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch babies on mount
+  // Fetch babies on mount and whenever the screen comes into focus
   useEffect(() => {
     fetchBabies();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", fetchBabies);
+    return unsubscribe;
+  }, [navigation]);
 
   const fetchBabies = async () => {
     try {
@@ -280,7 +285,7 @@ export default function Children({ navigation }: Props) {
                       activeOpacity={0.9}
                       style={styles.viewButtonTap}
                       onPress={() =>
-                        navigation.navigate("ChildDetails", { id: baby.baby_id })
+                        navigation.navigate("BabyDetail", { babyId: baby.baby_id })
                       }
                     >
                       <View style={styles.viewButton}>

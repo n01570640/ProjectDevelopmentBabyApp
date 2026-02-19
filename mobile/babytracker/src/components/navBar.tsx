@@ -16,7 +16,7 @@ const scale = (size: number) => (width / guidelineBaseWidth) * size;
 const moderateScale = (size: number, factor = 0.5) =>
   size + (scale(size) - size) * factor;
 
-type TabKey = "home" | "tasks" | "stats" | "children" | "profile";
+type TabKey = "home" | "tasks" | "schedule" | "stats" | "children" | "profile";
 
 type Props = {
   navigation: any;
@@ -27,13 +27,16 @@ export default function NavBar({ navigation, activeTab }: Props) {
   const handlePress = (tab: TabKey) => {
     switch (tab) {
       case "home":
-        navigation.navigate("Home");
+        navigation.navigate("Children");
         break;
       case "tasks":
-        navigation.navigate("Tasks");
+        navigation.navigate("Children");
+        break;
+      case "schedule":
+        navigation.navigate("Schedule");
         break;
       case "stats":
-        navigation.navigate("Stats");
+        navigation.navigate("Children");
         break;
       case "children":
         navigation.navigate("Children");
@@ -79,9 +82,8 @@ export default function NavBar({ navigation, activeTab }: Props) {
     >
       <View style={styles.navInner}>
         {renderTab("home", "home-outline", "Home")}
-        {renderTab("tasks", "list-outline", "Tasks")}
-        {renderTab("stats", "bar-chart-outline", "Stats")}
-        {renderTab("children", "people-outline", "Children")}
+        {renderTab("children", "people-outline", "Babies")}
+        {renderTab("schedule", "calendar-outline", "Schedule")}
         {renderTab("profile", "person-circle-outline", "Profile")}
       </View>
     </LinearGradient>
