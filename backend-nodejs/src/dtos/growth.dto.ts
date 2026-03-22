@@ -39,9 +39,3 @@ export interface LatestGrowthDTO {
   head_circum_cm: number | null;
   recorded_at: string | null;
 }
-
-// Growth list response
-export interface GrowthListResponseDTO {
-  data: GrowthDTO[];
-  total: number;
-}

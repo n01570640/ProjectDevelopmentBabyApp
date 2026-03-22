@@ -91,6 +91,11 @@ export async function getBaby(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     // Use detailed query to include latest growth and primary caregiver
     const baby = await babyService.getBabyWithDetails(babyId, userId);
 
@@ -121,7 +126,22 @@ export async function getBaby(req: Request, res: Response): Promise<void> {
  */
 export async function updateBaby(req: Request, res: Response): Promise<void> {
   try {
+    const userId = req.user?.user_id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
     const babyId = parseInt(req.params.babyId, 10);
+
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
 
     const data: UpdateBabyDTO = {};
     if (req.body.display_name !== undefined) data.display_name = req.body.display_name;
@@ -165,10 +185,23 @@ export async function deleteBaby(req: Request, res: Response): Promise<void> {
     const babyId = parseInt(req.params.babyId, 10);
     const accessRole = req.babyAccess?.access_role;
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     if (!userId) {
       res.status(401).json({
         success: false,
         message: "Authentication required",
+      });
+      return;
+    }
+
+    if (!accessRole) {
+      res.status(403).json({
+        success: false,
+        message: "Access role could not be determined",
       });
       return;
     }

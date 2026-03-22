@@ -30,28 +30,37 @@ async function main() {
 
   console.log(`Found ${orphaned.recordset.length} orphaned baby(ies):\n`);
 
-  for (const baby of orphaned.recordset) {
-    console.log(`  - Baby ID ${baby.baby_id}: ${baby.display_name}`);
+  const transaction = new sql.Transaction(db);
 
-    const relatedTables = [
-      "share_invites",
-      "baby_vaccinations",
-      "growth_metrics",
-    ];
+  try {
+    await transaction.begin();
 
-    for (const table of relatedTables) {
-      await db
-        .request()
+    for (const baby of orphaned.recordset) {
+      console.log(`  - Baby ID ${baby.baby_id}: ${baby.display_name}`);
+
+      await new sql.Request(transaction)
         .input("baby_id", sql.BigInt, baby.baby_id)
-        .query(`DELETE FROM ${table} WHERE baby_id = @baby_id`);
+        .query(`DELETE FROM share_invites WHERE baby_id = @baby_id`);
+
+      await new sql.Request(transaction)
+        .input("baby_id", sql.BigInt, baby.baby_id)
+        .query(`DELETE FROM baby_vaccinations WHERE baby_id = @baby_id`);
+
+      await new sql.Request(transaction)
+        .input("baby_id", sql.BigInt, baby.baby_id)
+        .query(`DELETE FROM growth_metrics WHERE baby_id = @baby_id`);
+
+      await new sql.Request(transaction)
+        .input("baby_id", sql.BigInt, baby.baby_id)
+        .query(`DELETE FROM babies WHERE baby_id = @baby_id`);
+
+      console.log(`    Deleted.`);
     }
 
-    await db
-      .request()
-      .input("baby_id", sql.BigInt, baby.baby_id)
-      .query(`DELETE FROM babies WHERE baby_id = @baby_id`);
-
-    console.log(`    Deleted.`);
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
 
   console.log(`\nCleanup complete. Removed ${orphaned.recordset.length} orphaned baby(ies).`);

@@ -14,6 +14,11 @@ export async function createInvitation(
     const userId = req.user?.user_id;
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     if (!userId) {
       res.status(401).json({
         success: false,
@@ -76,6 +81,11 @@ export async function listInvitations(
   try {
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     const invitations = await invitationService.getPendingInvitations(babyId);
 
     res.status(200).json({
@@ -101,7 +111,13 @@ export async function cancelInvitation(
 ): Promise<void> {
   try {
     const userId = req.user?.user_id;
+    const babyId = parseInt(req.params.babyId, 10);
     const inviteId = parseInt(req.params.inviteId, 10);
+
+    if (isNaN(babyId) || isNaN(inviteId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or invite ID" });
+      return;
+    }
 
     if (!userId) {
       res.status(401).json({
@@ -111,7 +127,7 @@ export async function cancelInvitation(
       return;
     }
 
-    const result = await invitationService.cancelInvitation(inviteId, userId);
+    const result = await invitationService.cancelInvitation(inviteId, userId, babyId);
 
     if (!result.success) {
       res.status(400).json({

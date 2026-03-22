@@ -15,7 +15,7 @@ export async function createGrowth(
   data: CreateGrowthDTO
 ): Promise<GrowthDTO> {
   // Validate at least one measurement is provided
-  if (!data.weight_kg && !data.length_cm && !data.head_circum_cm) {
+  if (data.weight_kg == null && data.length_cm == null && data.head_circum_cm == null) {
     throw new Error("At least one measurement (weight, length, or head circumference) is required");
   }
 

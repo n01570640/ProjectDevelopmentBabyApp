@@ -177,12 +177,14 @@ export async function hasPendingInvitation(
  */
 export async function acceptInvitation(
   invite_id: number,
-  user_id: number
+  user_id: number,
+  transactionRequest?: sql.Request
 ): Promise<InvitationDTO | null> {
-  const db = await getDb();
+  const request = transactionRequest
+    ? transactionRequest
+    : (await getDb()).request();
 
-  const result = await db
-    .request()
+  const result = await request
     .input("invite_id", sql.BigInt, invite_id)
     .input("user_id", sql.BigInt, user_id)
     .query(`
@@ -191,6 +193,7 @@ export async function acceptInvitation(
       OUTPUT INSERTED.*
       WHERE invite_id = @invite_id
         AND accepted_at IS NULL
+        AND expires_at > SYSDATETIME()
     `);
 
   return result.recordset[0] || null;

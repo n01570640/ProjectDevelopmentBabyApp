@@ -7,15 +7,17 @@ export async function createUser(
   email: string,
   password_hash: string,
   full_name: string,
-  phone: string | null
+  phone: string | null,
+  transactionRequest?: sql.Request
 ): Promise<UserDTO> {
-  const db = await getDb();
-
   // Convert bcrypt hash string to Buffer for varbinary storage
   const passwordBuffer = Buffer.from(password_hash, 'utf8');
 
-  const result = await db
-    .request()
+  const request = transactionRequest
+    ? transactionRequest
+    : (await getDb()).request();
+
+  const result = await request
     .input("email", sql.NVarChar(255), email)
     .input("password_hash", sql.VarBinary, passwordBuffer)
     .input("full_name", sql.NVarChar(200), full_name)

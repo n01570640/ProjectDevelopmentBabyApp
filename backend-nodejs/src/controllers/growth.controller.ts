@@ -11,6 +11,11 @@ export async function createGrowth(req: Request, res: Response): Promise<void> {
     const userId = req.user?.user_id;
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     if (!userId) {
       res.status(401).json({
         success: false,
@@ -60,6 +65,11 @@ export async function listGrowth(req: Request, res: Response): Promise<void> {
   try {
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     const growthRecords = await growthService.getBabyGrowthHistory(babyId);
 
     res.status(200).json({
@@ -84,6 +94,11 @@ export async function getLatestGrowth(req: Request, res: Response): Promise<void
   try {
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     const latestGrowth = await growthService.getLatestGrowth(babyId);
 
     res.status(200).json({
@@ -107,6 +122,11 @@ export async function getGrowth(req: Request, res: Response): Promise<void> {
   try {
     const babyId = parseInt(req.params.babyId, 10);
     const growthId = parseInt(req.params.growthId, 10);
+
+    if (isNaN(babyId) || isNaN(growthId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or growth ID" });
+      return;
+    }
 
     // Verify growth record belongs to baby
     const belongsToBaby = await growthService.growthBelongsToBaby(growthId, babyId);
@@ -150,6 +170,11 @@ export async function updateGrowth(req: Request, res: Response): Promise<void> {
   try {
     const babyId = parseInt(req.params.babyId, 10);
     const growthId = parseInt(req.params.growthId, 10);
+
+    if (isNaN(babyId) || isNaN(growthId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or growth ID" });
+      return;
+    }
 
     // Verify growth record belongs to baby
     const belongsToBaby = await growthService.growthBelongsToBaby(growthId, babyId);
@@ -201,6 +226,11 @@ export async function deleteGrowth(req: Request, res: Response): Promise<void> {
   try {
     const babyId = parseInt(req.params.babyId, 10);
     const growthId = parseInt(req.params.growthId, 10);
+
+    if (isNaN(babyId) || isNaN(growthId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or growth ID" });
+      return;
+    }
 
     // Verify growth record belongs to baby
     const belongsToBaby = await growthService.growthBelongsToBaby(growthId, babyId);

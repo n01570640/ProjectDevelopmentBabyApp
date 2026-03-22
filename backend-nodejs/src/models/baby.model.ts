@@ -5,16 +5,20 @@ import { BabyDTO, CreateBabyDTO, UpdateBabyDTO, BabyWithAccessDTO, BabyWithDetai
 /**
  * Create a new baby
  */
-export async function createBaby(data: CreateBabyDTO): Promise<BabyDTO> {
-  const db = await getDb();
+export async function createBaby(
+  data: CreateBabyDTO,
+  transactionRequest?: sql.Request
+): Promise<BabyDTO> {
+  const request = transactionRequest
+    ? transactionRequest
+    : (await getDb()).request();
 
-  const result = await db
-    .request()
+  const result = await request
     .input("display_name", sql.NVarChar(200), data.display_name)
     .input("date_of_birth", sql.Date, data.date_of_birth)
-    .input("sex", sql.VarChar(10), data.sex || null)
-    .input("blood_type", sql.VarChar(3), data.blood_type || null)
-    .input("notes", sql.NVarChar, data.notes || null)
+    .input("sex", sql.VarChar(10), data.sex ?? null)
+    .input("blood_type", sql.VarChar(3), data.blood_type ?? null)
+    .input("notes", sql.NVarChar, data.notes ?? null)
     .query(`
       INSERT INTO babies (display_name, date_of_birth, sex, blood_type, notes, created_at)
       OUTPUT INSERTED.*
@@ -121,18 +125,21 @@ export async function deleteBaby(baby_id: number): Promise<boolean> {
   try {
     await transaction.begin();
 
-    const relatedTables = [
-      "share_invites",
-      "baby_vaccinations",
-      "growth_metrics",
-      "caregiver_baby_access",
-    ];
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM share_invites WHERE baby_id = @baby_id`);
 
-    for (const table of relatedTables) {
-      await new sql.Request(transaction)
-        .input("baby_id", sql.BigInt, baby_id)
-        .query(`DELETE FROM ${table} WHERE baby_id = @baby_id`);
-    }
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM baby_vaccinations WHERE baby_id = @baby_id`);
+
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM growth_metrics WHERE baby_id = @baby_id`);
+
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM caregiver_baby_access WHERE baby_id = @baby_id`);
 
     const result = await new sql.Request(transaction)
       .input("baby_id", sql.BigInt, baby_id)
