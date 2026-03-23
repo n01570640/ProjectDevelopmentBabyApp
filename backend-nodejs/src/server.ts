@@ -14,6 +14,11 @@ import growthRoutes from "./routes/growth.routes";
 import activityRoutes from "./routes/activity.routes";
 import taskRoutes from "./routes/task.routes";
 import reminderRoutes from "./routes/reminder.routes";
+import symptomRoutes from "./routes/symptom.routes";
+import medicationRoutes from "./routes/medication.routes";
+import analyticsRoutes from "./routes/analytics.routes";
+import notificationRoutes from "./routes/notification.routes";
+import { startReminderCron } from "./jobs/reminder-cron";
 
 // Load environment variables
 dotenv.config();
@@ -54,6 +59,10 @@ app.use("/api/v1/babies", activityRoutes);     // /babies/:babyId/activities
 app.use("/api/v1/babies", taskRoutes);         // /babies/:babyId/tasks
 app.use("/api/v1/babies", reminderRoutes);     // /babies/:babyId/reminders
 app.use("/api/v1", invitationRoutes); // Handles both /babies/:babyId/invitations and /invitations/:token
+app.use("/api/v1", symptomRoutes);              // /symptoms, /trigger-types, /babies/:babyId/symptoms
+app.use("/api/v1/babies", medicationRoutes);    // /babies/:babyId/medications
+app.use("/api/v1/analytics", analyticsRoutes);      // /analytics/baby/:babyId/summary, /graphs
+app.use("/api/v1/notifications", notificationRoutes); // /notifications/register-token, /notifications
 app.use("/api/v1/guidelines", guidelineRoutes);
 
 // SQL test route (non-production only)
@@ -99,6 +108,13 @@ app.get('/api/v1', (req, res) => {
       babies: '/api/v1/babies',
       vaccinations: '/api/v1/babies/:babyId/vaccinations',
       invitations: '/api/v1/babies/:babyId/invitations',
+      symptoms_catalog: '/api/v1/symptoms',
+      trigger_types: '/api/v1/trigger-types',
+      symptom_logs: '/api/v1/babies/:babyId/symptoms',
+      medications: '/api/v1/babies/:babyId/medications',
+      analytics_summary: '/api/v1/analytics/baby/:babyId/summary',
+      analytics_graphs: '/api/v1/analytics/baby/:babyId/graphs',
+      notifications: '/api/v1/notifications',
       guidelines: '/api/v1/guidelines',
       health: '/api/v1/health',
       ...(process.env.NODE_ENV !== 'production' ? { test_db: '/api/v1/test-db' } : {})
@@ -134,4 +150,11 @@ app.listen(PORT, () => {
   console.log(`Baby Tracking API listening on port ${PORT}`);
   console.log(`API Documentation: http://localhost:${PORT}/api/v1`);
   console.log(`DB Test Endpoint: http://localhost:${PORT}/api/v1/test-db`);
+
+  // Start reminder notification cron job
+  try {
+    startReminderCron();
+  } catch (err: any) {
+    console.error("Failed to start reminder cron job:", err.message);
+  }
 });

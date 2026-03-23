@@ -13,24 +13,35 @@ React Native mobile application for tracking baby activities and health built wi
 
 ```
 babytracker/
-├── services/                # API service layer
-│   ├── api.js               # HTTP client (base URL, auth headers, GET/POST/PUT/DELETE)
-│   ├── authService.js       # Authentication (register, login, logout)
-│   ├── babyService.js       # Baby CRUD and growth metrics
-│   ├── invitationService.js # Invitation system (create, accept, cancel)
-│   ├── guidelineService.js  # Vaccine guidelines (CDC schedule)
-│   └── userService.js       # User operations
+├── services/                    # API service layer (10 files)
+│   ├── api.js                   # HTTP client (base URL, auth headers, GET/POST/PUT/DELETE)
+│   ├── authService.js           # Authentication (register, login, logout)
+│   ├── babyService.js           # Baby CRUD and growth metrics
+│   ├── scheduleService.js       # Activities, tasks, reminders
+│   ├── symptomService.js        # Symptoms catalog, trigger types, symptom logs
+│   ├── medicationService.js     # Medications CRUD
+│   ├── analyticsService.js      # Dashboard summary + graph data
+│   ├── notificationService.js   # Push token registration + notification history
+│   ├── invitationService.js     # Invitation system (create, accept, cancel)
+│   ├── guidelineService.js      # Vaccine guidelines (CDC schedule)
+│   └── userService.js           # Legacy (unused)
 ├── src/
-│   ├── components/          # Screen components
-│   │   ├── landing.tsx      # Landing/welcome screen
-│   │   ├── login.tsx        # Login screen
-│   │   ├── register.tsx     # Registration screen
-│   │   ├── children.tsx     # Baby list screen
-│   │   └── navBar.tsx       # Navigation bar
-│   └── images/              # App images and icons
-├── App.js                   # Root component and navigation setup
-├── index.js                 # Entry point
-├── app.json                 # Expo config
+│   ├── components/              # Screen components (9 screens + navbar)
+│   │   ├── landing.tsx          # Welcome page
+│   │   ├── login.tsx            # Email/password login
+│   │   ├── register.tsx         # User registration
+│   │   ├── children.tsx         # Baby list dashboard
+│   │   ├── BabyDetailScreen.tsx # Individual baby profile + growth
+│   │   ├── AddChildScreen.tsx   # Create new baby form
+│   │   ├── ScheduleScreen.tsx   # Calendar with activities/tasks/reminders
+│   │   ├── ProfileScreen.tsx    # User profile, caregiver management
+│   │   ├── HistoryScreen.tsx    # Activity timeline
+│   │   └── navBar.tsx           # Reusable bottom navigation bar
+│   ├── fonts/                   # Custom fonts (Quicksand, Raleway)
+│   └── images/                  # App images and icons
+├── App.js                       # Root component - NativeStackNavigator (9 screens)
+├── index.js                     # Entry point
+├── app.json                     # Expo config
 ├── package.json
 └── README.md
 ```
@@ -101,6 +112,56 @@ Base HTTP client used by all other services. Handles:
 | `cancelInvitation(babyId, inviteId)`    | Cancel a pending invitation.                                       |
 | `getInvitationByToken(token)`           | View public invitation details (no auth required).                 |
 | `acceptInvitation(token)`               | Accept an invitation (email must match).                           |
+
+### scheduleService.js — Activities, Tasks, Reminders
+
+| Function | Description |
+|---|---|
+| `getActivities(babyId)` | List all activities for a baby. |
+| `createActivity(babyId, data)` | Log a new activity (feeding, sleep, diaper, etc). |
+| `getTasks(babyId)` | List all tasks for a baby. |
+| `createTask(babyId, data)` | Create a new task. |
+| `updateTask(babyId, taskId, data)` | Update a task. |
+| `getReminders(babyId)` | List all reminders for a baby. |
+| `createReminder(babyId, data)` | Create a new reminder. |
+
+### symptomService.js — Symptom Tracking
+
+| Function | Description |
+|---|---|
+| `getAllSymptoms()` | List all 15 common baby symptoms from catalog. |
+| `getSymptomByCode(code)` | Get symptom details by code (e.g. FEVER). |
+| `getTriggerTypes()` | List all 6 trigger types for dropdowns. |
+| `createSymptomLog(babyId, data)` | Log a symptom with severity, trigger, notes. |
+| `getSymptomLogs(babyId, filters)` | List symptom logs with optional date/code/trigger filters. |
+| `getSymptomLog(babyId, symptomLogId)` | Get a single symptom log. |
+| `updateSymptomLog(babyId, symptomLogId, data)` | Update a symptom log. |
+| `deleteSymptomLog(babyId, symptomLogId)` | Delete a symptom log. |
+
+### medicationService.js — Medications
+
+| Function | Description |
+|---|---|
+| `createMedication(babyId, data)` | Add a medication (name, dosage, form, dates). |
+| `getMedications(babyId)` | List all medications for a baby. |
+| `getMedication(babyId, medicationId)` | Get a single medication. |
+| `updateMedication(babyId, medicationId, data)` | Update a medication. |
+| `deleteMedication(babyId, medicationId)` | Delete a medication. |
+
+### analyticsService.js — Dashboard Analytics
+
+| Function | Description |
+|---|---|
+| `getBabySummary(babyId)` | Dashboard summary (activity counts, growth, symptoms, medications, tasks, reminders). |
+| `getBabyGraphs(babyId)` | Graph data (growth trends, activity frequency, symptom frequency over time). |
+
+### notificationService.js — Push Notifications
+
+| Function | Description |
+|---|---|
+| `registerPushToken(deviceToken, platform)` | Register Expo push token with backend (call on app startup). |
+| `unregisterPushToken(deviceToken)` | Unregister push token (call on logout). |
+| `getNotifications(limit)` | Get notification history for the user. |
 
 ### guidelineService.js — Vaccine Guidelines
 

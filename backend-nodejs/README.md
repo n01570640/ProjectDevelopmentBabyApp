@@ -17,16 +17,17 @@ Express.js REST API built with TypeScript for the Baby Tracking Application.
 ```
 backend-nodejs/
 ├── src/
-│   ├── controllers/     # Route handlers
-│   ├── data/            # Hardcoded reference data (vaccine catalog)
-│   ├── dtos/            # Data transfer objects / interfaces
+│   ├── controllers/     # Route handlers (13 files)
+│   ├── data/            # Hardcoded reference data (vaccines, symptoms catalogs)
+│   ├── dtos/            # Data transfer objects / interfaces (14 files)
+│   ├── jobs/            # Scheduled tasks (reminder notification cron)
 │   ├── middleware/       # Auth, RBAC, validation
-│   ├── models/          # Database queries
-│   ├── routes/          # API route definitions
+│   ├── models/          # Database queries (13 files)
+│   ├── routes/          # API route definitions (13 files)
 │   ├── scripts/         # Seed and cleanup scripts
-│   ├── services/        # Business logic
-│   ├── utils/           # Helper functions (JWT, tokens)
-│   ├── validators/      # Request validation rules
+│   ├── services/        # Business logic (12 files)
+│   ├── utils/           # Helper functions (JWT, tokens, Expo Push)
+│   ├── validators/      # Request validation rules (13 files)
 │   ├── db.ts            # Database connection
 │   └── server.ts        # Entry point
 ├── package.json
@@ -228,6 +229,114 @@ All routes require authentication. Read-only reference data.
 | GET    | `/guidelines/vaccines`                    | List all 30 CDC-recommended vaccines         |
 | GET    | `/guidelines/vaccines/:vaccineId`         | Get specific vaccine details                 |
 | GET    | `/guidelines/vaccines/schedule/:ageWeeks` | Get vaccines due/upcoming for age (in weeks) |
+
+### Activities
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                    | Permission            | Description        |
+|--------|---------------------------------------------|-----------------------|--------------------|
+| POST   | `/babies/:babyId/activities`                | `can_edit_activities` | Log an activity    |
+| GET    | `/babies/:babyId/activities`                | Baby access           | List activities    |
+| GET    | `/babies/:babyId/activities/:activityId`    | Baby access           | Get activity       |
+| PUT    | `/babies/:babyId/activities/:activityId`    | `can_edit_activities` | Update activity    |
+| DELETE | `/babies/:babyId/activities/:activityId`    | `can_edit_activities` | Delete activity    |
+
+### Tasks
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                          | Permission  | Description  |
+|--------|-----------------------------------|-------------|--------------|
+| POST   | `/babies/:babyId/tasks`           | Baby access | Create task  |
+| GET    | `/babies/:babyId/tasks`           | Baby access | List tasks   |
+| GET    | `/babies/:babyId/tasks/:taskId`   | Baby access | Get task     |
+| PUT    | `/babies/:babyId/tasks/:taskId`   | Baby access | Update task  |
+| DELETE | `/babies/:babyId/tasks/:taskId`   | Baby access | Delete task  |
+
+### Reminders
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                  | Permission  | Description     |
+|--------|-------------------------------------------|-------------|-----------------|
+| POST   | `/babies/:babyId/reminders`               | Baby access | Create reminder |
+| GET    | `/babies/:babyId/reminders`               | Baby access | List reminders  |
+| GET    | `/babies/:babyId/reminders/:reminderId`   | Baby access | Get reminder    |
+| PUT    | `/babies/:babyId/reminders/:reminderId`   | Baby access | Update reminder |
+| DELETE | `/babies/:babyId/reminders/:reminderId`   | Baby access | Delete reminder |
+
+### Symptoms Catalog & Trigger Types
+
+Read-only reference data. All routes require authentication.
+
+| Method | Endpoint            | Description                       |
+|--------|---------------------|-----------------------------------|
+| GET    | `/symptoms`         | List all 15 common baby symptoms  |
+| GET    | `/symptoms/:code`   | Get symptom by code (e.g. FEVER)  |
+| GET    | `/trigger-types`    | List all 6 trigger types          |
+
+### Symptom Logs
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                          | Permission        | Description                         |
+|--------|---------------------------------------------------|-------------------|-------------------------------------|
+| POST   | `/babies/:babyId/symptoms`                        | `can_edit_health` | Log a symptom                       |
+| GET    | `/babies/:babyId/symptoms`                        | Baby access       | List symptom logs (filterable)      |
+| GET    | `/babies/:babyId/symptoms/:symptomLogId`          | Baby access       | Get specific symptom log            |
+| PUT    | `/babies/:babyId/symptoms/:symptomLogId`          | `can_edit_health` | Update symptom log                  |
+| DELETE | `/babies/:babyId/symptoms/:symptomLogId`          | `can_edit_health` | Delete symptom log                  |
+
+**Query filters for GET list:**
+- `?from=2026-01-01` - Filter from date (ISO 8601)
+- `?to=2026-03-01` - Filter to date
+- `?symptom_code=FEVER` - Filter by symptom
+- `?trigger_type=FOOD` - Filter by trigger type
+
+### Medications
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                          | Permission        | Description       |
+|--------|---------------------------------------------------|-------------------|-------------------|
+| POST   | `/babies/:babyId/medications`                     | `can_edit_health` | Add medication    |
+| GET    | `/babies/:babyId/medications`                     | Baby access       | List medications  |
+| GET    | `/babies/:babyId/medications/:medicationId`       | Baby access       | Get medication    |
+| PUT    | `/babies/:babyId/medications/:medicationId`       | `can_edit_health` | Update medication |
+| DELETE | `/babies/:babyId/medications/:medicationId`       | `can_edit_health` | Delete medication |
+
+### Analytics
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                              | Description                                    |
+|--------|---------------------------------------|------------------------------------------------|
+| GET    | `/analytics/baby/:babyId/summary`     | Dashboard summary (counts, latest growth, etc) |
+| GET    | `/analytics/baby/:babyId/graphs`      | Graph data (growth trends, activity/symptom frequency) |
+
+### Notifications
+
+All routes require authentication.
+
+| Method | Endpoint                            | Description                     |
+|--------|-------------------------------------|---------------------------------|
+| POST   | `/notifications/register-token`     | Register Expo push token        |
+| POST   | `/notifications/unregister-token`   | Unregister push token (logout)  |
+| GET    | `/notifications`                    | Get notification history        |
+
+## Notification System
+
+Push notifications are sent automatically when reminders come due.
+
+**Architecture:** Expo Push Notifications + node-cron scheduler
+
+- A cron job runs every minute checking for due reminders
+- Sends push notifications via Expo Push API to all caregivers of the baby
+- One-time reminders are deactivated after firing
+- All notifications are logged in `notifications_log` table
+
+**Frontend integration:** Call `POST /notifications/register-token` on app startup with the Expo push token to enable notifications.
 
 ## Input Validation
 

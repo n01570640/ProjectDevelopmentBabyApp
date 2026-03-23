@@ -6,6 +6,7 @@ import {
   Text,
   Dimensions,
 } from "react-native";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -24,6 +25,7 @@ type Props = {
 };
 
 export default function NavBar({ navigation, activeTab }: Props) {
+  const insets = useSafeAreaInsets(); //account for andriod systems bar
   const handlePress = (tab: TabKey) => {
     switch (tab) {
       case "home":
@@ -78,7 +80,7 @@ export default function NavBar({ navigation, activeTab }: Props) {
       colors={["#f2fcff", "#e7f3ff"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={styles.navBackground}
+      style={[styles.navBackground , { height: NAV_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
     >
       <View style={styles.navInner}>
         {renderTab("home", "home-outline", "Home")}
