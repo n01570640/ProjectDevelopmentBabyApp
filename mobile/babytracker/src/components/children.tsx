@@ -130,23 +130,16 @@ export default function Children({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-<<<<<<< HEAD
   // Fetch babies on mount and whenever the screen comes into focus
-=======
-  // Fetch babies on mount
->>>>>>> feature/RBAC-and-Invitation-middleware
   useEffect(() => {
     fetchBabies();
   }, []);
 
-<<<<<<< HEAD
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", fetchBabies);
     return unsubscribe;
   }, [navigation]);
 
-=======
->>>>>>> feature/RBAC-and-Invitation-middleware
   const fetchBabies = async () => {
     try {
       setLoading(true);
@@ -292,11 +285,7 @@ export default function Children({ navigation }: Props) {
                       activeOpacity={0.9}
                       style={styles.viewButtonTap}
                       onPress={() =>
-<<<<<<< HEAD
                         navigation.navigate("BabyDetail", { babyId: baby.baby_id })
-=======
-                        navigation.navigate("ChildDetails", { id: baby.baby_id })
->>>>>>> feature/RBAC-and-Invitation-middleware
                       }
                     >
                       <View style={styles.viewButton}>
