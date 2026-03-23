@@ -19,7 +19,13 @@ const VALID_BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 // POST /api/v1/babies - Create baby
 export const createBabyValidator = [
   requiredString("display_name", 200),
-  dateValidator("date_of_birth"),
+  dateValidator("date_of_birth")
+    .custom((value: string) => {
+      if (new Date(value) > new Date()) {
+        throw new Error("date_of_birth must not be in the future");
+      }
+      return true;
+    }),
   enumValidator("sex", VALID_SEX_VALUES),
   enumValidator("blood_type", VALID_BLOOD_TYPES),
   optionalString("notes", 1000),
@@ -35,7 +41,13 @@ export const updateBabyValidator = [
     .withMessage("display_name cannot be empty if provided")
     .isLength({ max: 200 })
     .withMessage("display_name must be at most 200 characters"),
-  optionalDateValidator("date_of_birth"),
+  optionalDateValidator("date_of_birth")
+    .custom((value: string) => {
+      if (value && new Date(value) > new Date()) {
+        throw new Error("date_of_birth must not be in the future");
+      }
+      return true;
+    }),
   enumValidator("sex", VALID_SEX_VALUES),
   enumValidator("blood_type", VALID_BLOOD_TYPES),
   optionalString("notes", 1000),

@@ -21,5 +21,6 @@ export function generateExpirationDate(days: number = 7): Date {
  */
 export function isExpired(expirationDate: Date | string): boolean {
   const expiry = new Date(expirationDate);
+  if (isNaN(expiry.getTime())) return true;
   return expiry < new Date();
 }

@@ -24,8 +24,12 @@ const PORT = process.env.PORT || 3000;
 // ------------------------------------------------------------
 // GLOBAL MIDDLEWARE (CORS MUST COME BEFORE ROUTES)
 // ------------------------------------------------------------
+const corsOrigin = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
+  : (process.env.NODE_ENV === "production" ? [] : "*");
+
 app.use(cors({
-  origin: "*",
+  origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -35,7 +39,7 @@ app.options("*", cors());
 
 app.use(helmet());
 app.use(morgan('dev')); // HTTP request logging
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ------------------------------------------------------------
@@ -52,26 +56,28 @@ app.use("/api/v1/babies", reminderRoutes);     // /babies/:babyId/reminders
 app.use("/api/v1", invitationRoutes); // Handles both /babies/:babyId/invitations and /invitations/:token
 app.use("/api/v1/guidelines", guidelineRoutes);
 
-// SQL test route
-app.get('/api/v1/test-db', async (req, res) => {
-  try {
-    const db = await getDb();
-    const result = await db.request().query("SELECT 1 AS test");
+// SQL test route (non-production only)
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/v1/test-db', async (req, res) => {
+    try {
+      const db = await getDb();
+      const result = await db.request().query("SELECT 1 AS test");
 
-    res.status(200).json({
-      success: true,
-      message: 'Connected to Azure SQL successfully!',
-      result: result.recordset
-    });
-  } catch (err: any) {
-    console.error("DB Test Error:", err);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to connect to Azure SQL',
-      error: err.message
-    });
-  }
-});
+      res.status(200).json({
+        success: true,
+        message: 'Connected to Azure SQL successfully!',
+        result: result.recordset
+      });
+    } catch (err: any) {
+      console.error("DB Test Error:", err);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to connect to Azure SQL',
+        error: err.message
+      });
+    }
+  });
+}
 
 // Health Check
 app.get('/api/v1/health', (req, res) => {
@@ -95,9 +101,16 @@ app.get('/api/v1', (req, res) => {
       invitations: '/api/v1/babies/:babyId/invitations',
       guidelines: '/api/v1/guidelines',
       health: '/api/v1/health',
-      test_db: '/api/v1/test-db'
+      ...(process.env.NODE_ENV !== 'production' ? { test_db: '/api/v1/test-db' } : {})
     }
   });
+});
+
+// ------------------------------------------------------------
+// 404 CATCH-ALL
+// ------------------------------------------------------------
+app.use((req: express.Request, res: express.Response) => {
+  res.status(404).json({ success: false, message: "Route not found" });
 });
 
 // ------------------------------------------------------------

@@ -1,5 +1,3 @@
-import { UserDTO } from "./user.dto";
-
 // Data for user registration
 export interface RegisterDTO {
   email: string;
@@ -13,13 +11,6 @@ export interface RegisterDTO {
 export interface LoginDTO {
   email: string;
   password: string;
-}
-
-// JWT token response format
-export interface AuthResponseDTO {
-  success: boolean;
-  token: string;
-  user: UserDTO;
 }
 
 // Error response format

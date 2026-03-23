@@ -20,10 +20,10 @@ export async function createGrowth(
   const result = await db
     .request()
     .input("baby_id", sql.BigInt, babyId)
-    .input("weight_kg", sql.Decimal(5, 2), data.weight_kg || null)
-    .input("length_cm", sql.Decimal(5, 2), data.length_cm || null)
-    .input("head_circum_cm", sql.Decimal(5, 2), data.head_circum_cm || null)
-    .input("notes", sql.NVarChar(500), data.notes || null)
+    .input("weight_kg", sql.Decimal(5, 2), data.weight_kg ?? null)
+    .input("length_cm", sql.Decimal(5, 2), data.length_cm ?? null)
+    .input("head_circum_cm", sql.Decimal(5, 2), data.head_circum_cm ?? null)
+    .input("notes", sql.NVarChar(500), data.notes ?? null)
     .input("recorded_by", sql.BigInt, recordedBy)
     .input("recorded_at", sql.DateTime2, data.recorded_at ? new Date(data.recorded_at) : null)
     .query(`

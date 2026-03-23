@@ -11,9 +11,6 @@ export type InviteRole = Exclude<AccessRole, AccessRole.PRIMARY_CAREGIVER>;
 export interface CreateInvitationDTO {
   invited_email: string;
   invited_role: InviteRole;
-  can_edit_health?: boolean;
-  can_edit_activities?: boolean;
-  can_share?: boolean;
 }
 
 // Invitation record from database

@@ -131,12 +131,14 @@ export async function getBabyCaregivers(
  * Create caregiver access record
  */
 export async function createCaregiverAccess(
-  data: CreateCaregiverAccessDTO
+  data: CreateCaregiverAccessDTO,
+  transactionRequest?: sql.Request
 ): Promise<CaregiverAccessDTO> {
-  const db = await getDb();
+  const request = transactionRequest
+    ? transactionRequest
+    : (await getDb()).request();
 
-  const request = db
-    .request()
+  request
     .input("baby_id", sql.BigInt, data.baby_id)
     .input("user_id", sql.BigInt, data.user_id)
     .input("access_role", sql.VarChar(30), data.access_role)
@@ -242,6 +244,23 @@ export async function removeCaregiverAccess(
   babyId: number
 ): Promise<boolean> {
   const db = await getDb();
+
+  // Guard: prevent removing the sole PRIMARY_CAREGIVER
+  const access = await getUserBabyAccess(userId, babyId);
+  if (access?.access_role === AccessRole.PRIMARY_CAREGIVER) {
+    const countResult = await db
+      .request()
+      .input("baby_id", sql.BigInt, babyId)
+      .query(`
+        SELECT COUNT(*) as count
+        FROM caregiver_baby_access
+        WHERE baby_id = @baby_id AND access_role = 'PRIMARY_CAREGIVER'
+      `);
+
+    if (countResult.recordset[0].count <= 1) {
+      throw new Error("Cannot remove the sole primary caregiver");
+    }
+  }
 
   const result = await db
     .request()

@@ -14,6 +14,11 @@ export async function createVaccination(
     const userId = req.user?.user_id;
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     if (!userId) {
       res.status(401).json({
         success: false,
@@ -70,6 +75,11 @@ export async function listVaccinations(
   try {
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     const vaccinations = await vaccinationService.getBabyVaccinations(babyId);
 
     res.status(200).json({
@@ -99,6 +109,11 @@ export async function getVaccination(
   try {
     const babyId = parseInt(req.params.babyId, 10);
     const vaccinationId = parseInt(req.params.vaccinationId, 10);
+
+    if (isNaN(babyId) || isNaN(vaccinationId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or vaccination ID" });
+      return;
+    }
 
     // Verify vaccination belongs to baby
     const belongsToBaby = await vaccinationService.vaccinationBelongsToBaby(
@@ -148,6 +163,11 @@ export async function updateVaccination(
   try {
     const babyId = parseInt(req.params.babyId, 10);
     const vaccinationId = parseInt(req.params.vaccinationId, 10);
+
+    if (isNaN(babyId) || isNaN(vaccinationId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or vaccination ID" });
+      return;
+    }
 
     // Verify vaccination belongs to baby
     const belongsToBaby = await vaccinationService.vaccinationBelongsToBaby(
@@ -217,6 +237,11 @@ export async function deleteVaccination(
   try {
     const babyId = parseInt(req.params.babyId, 10);
     const vaccinationId = parseInt(req.params.vaccinationId, 10);
+
+    if (isNaN(babyId) || isNaN(vaccinationId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or vaccination ID" });
+      return;
+    }
 
     // Verify vaccination belongs to baby
     const belongsToBaby = await vaccinationService.vaccinationBelongsToBaby(

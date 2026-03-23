@@ -2,28 +2,45 @@ import { CreateBabyDTO, BabyDTO, UpdateBabyDTO, BabyWithAccessDTO, BabyWithDetai
 import * as babyModel from "../models/baby.model";
 import * as caregiverAccessModel from "../models/caregiver-access.model";
 import { AccessRole } from "../dtos/caregiver-access.dto";
+import sql from "mssql";
+import { getDb } from "../db";
 
 /**
  * Create a new baby and auto-assign the creator as PRIMARY_CAREGIVER
+ * Wrapped in a transaction to prevent orphaned baby records
  */
 export async function createBabyWithAccess(
   data: CreateBabyDTO,
   userId: number
 ): Promise<BabyDTO> {
-  // Create the baby record
-  const baby = await babyModel.createBaby(data);
+  const db = await getDb();
+  const transaction = new sql.Transaction(db);
 
-  // Auto-assign the creator as PRIMARY_CAREGIVER with all permissions
-  await caregiverAccessModel.createCaregiverAccess({
-    baby_id: baby.baby_id,
-    user_id: userId,
-    access_role: AccessRole.PRIMARY_CAREGIVER,
-    can_edit_health: true,
-    can_edit_activities: true,
-    can_share: true,
-  });
+  try {
+    await transaction.begin();
 
-  return baby;
+    // Create the baby record
+    const baby = await babyModel.createBaby(data, new sql.Request(transaction));
+
+    // Auto-assign the creator as PRIMARY_CAREGIVER with all permissions
+    await caregiverAccessModel.createCaregiverAccess(
+      {
+        baby_id: baby.baby_id,
+        user_id: userId,
+        access_role: AccessRole.PRIMARY_CAREGIVER,
+        can_edit_health: true,
+        can_edit_activities: true,
+        can_share: true,
+      },
+      new sql.Request(transaction)
+    );
+
+    await transaction.commit();
+    return baby;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 }
 
 /**
@@ -76,9 +93,4 @@ export async function deleteBaby(baby_id: number): Promise<boolean> {
  */
 export async function removeAccess(baby_id: number, user_id: number): Promise<boolean> {
   return await caregiverAccessModel.removeCaregiverAccess(user_id, baby_id);
-}
-
-// Legacy function for backward compatibility
-export async function addBaby(data: CreateBabyDTO): Promise<BabyDTO> {
-  return await babyModel.createBaby(data);
 }

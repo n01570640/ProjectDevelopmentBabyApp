@@ -9,6 +9,9 @@ import {
 } from "../dtos/invitation.dto";
 import { AccessRole } from "../dtos/caregiver-access.dto";
 import { isExpired } from "../utils/token.util";
+import { getRolePermissions } from "../utils/role-permissions.util";
+import sql from "mssql";
+import { getDb } from "../db";
 
 /**
  * Create a new invitation
@@ -18,12 +21,6 @@ export async function createInvitation(
   inviterUserId: number,
   data: CreateInvitationDTO
 ): Promise<InvitationResponseDTO> {
-  // Check if user already has access to this baby
-  const existingAccess = await caregiverAccessModel.getUserBabyAccess(
-    0, // We need to find user by email first
-    babyId
-  );
-
   // Check if there's already a pending invitation
   const hasPending = await invitationModel.hasPendingInvitation(
     babyId,
@@ -132,17 +129,37 @@ export async function acceptInvitation(
   // Determine permissions based on role
   const permissions = getRolePermissions(invitation.invited_role as AccessRole);
 
-  // Create caregiver access
-  await caregiverAccessModel.createCaregiverAccess({
-    baby_id: invitation.baby_id,
-    user_id: userId,
-    access_role: invitation.invited_role as AccessRole,
-    ...permissions,
-    invited_at: invitation.created_at,
-  });
+  // Wrap in transaction to prevent dangling access records
+  const db = await getDb();
+  const transaction = new sql.Transaction(db);
 
-  // Mark invitation as accepted
-  await invitationModel.acceptInvitation(invitation.invite_id, userId);
+  try {
+    await transaction.begin();
+
+    // Create caregiver access
+    await caregiverAccessModel.createCaregiverAccess(
+      {
+        baby_id: invitation.baby_id,
+        user_id: userId,
+        access_role: invitation.invited_role as AccessRole,
+        ...permissions,
+        invited_at: invitation.created_at,
+      },
+      new sql.Request(transaction)
+    );
+
+    // Mark invitation as accepted
+    await invitationModel.acceptInvitation(
+      invitation.invite_id,
+      userId,
+      new sql.Request(transaction)
+    );
+
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
 
   return {
     success: true,
@@ -156,11 +173,17 @@ export async function acceptInvitation(
  */
 export async function cancelInvitation(
   inviteId: number,
-  userId: number
+  userId: number,
+  babyId: number
 ): Promise<{ success: boolean; message: string }> {
   const invitation = await invitationModel.findInvitationById(inviteId);
 
   if (!invitation) {
+    return { success: false, message: "Invitation not found" };
+  }
+
+  // Verify invitation belongs to the specified baby
+  if (invitation.baby_id !== babyId) {
     return { success: false, message: "Invitation not found" };
   }
 
@@ -196,32 +219,3 @@ function formatInvitationResponse(invitation: InvitationDTO): InvitationResponse
   };
 }
 
-/**
- * Get default permissions for a role
- */
-function getRolePermissions(role: AccessRole): {
-  can_edit_health: boolean;
-  can_edit_activities: boolean;
-  can_share: boolean;
-} {
-  switch (role) {
-    case AccessRole.SECONDARY_CAREGIVER:
-      return {
-        can_edit_health: true,
-        can_edit_activities: true,
-        can_share: false,
-      };
-    case AccessRole.PROFESSIONAL:
-      return {
-        can_edit_health: true,
-        can_edit_activities: false,
-        can_share: false,
-      };
-    default:
-      return {
-        can_edit_health: false,
-        can_edit_activities: false,
-        can_share: false,
-      };
-  }
-}

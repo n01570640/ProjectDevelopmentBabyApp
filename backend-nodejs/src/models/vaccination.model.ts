@@ -23,9 +23,9 @@ export async function createVaccination(
     .input("baby_id", sql.BigInt, babyId)
     .input("vaccine_id", sql.Int, data.vaccine_id)
     .input("administered_on", sql.Date, data.administered_on)
-    .input("clinic", sql.NVarChar(200), data.clinic || null)
-    .input("lot_number", sql.NVarChar(100), data.lot_number || null)
-    .input("administered_by", sql.NVarChar(200), data.administered_by || null)
+    .input("clinic", sql.NVarChar(200), data.clinic ?? null)
+    .input("lot_number", sql.NVarChar(100), data.lot_number ?? null)
+    .input("administered_by", sql.NVarChar(200), data.administered_by ?? null)
     .input("recorded_by", sql.BigInt, recordedBy)
     .query(`
       INSERT INTO baby_vaccinations
@@ -181,6 +181,6 @@ function enrichWithVaccineInfo(
   return {
     ...vaccination,
     vaccine_name: vaccine?.vaccine_name || "Unknown Vaccine",
-    schedule_weeks: vaccine?.schedule_weeks || 0,
+    schedule_weeks: vaccine?.schedule_weeks ?? 0,
   };
 }
