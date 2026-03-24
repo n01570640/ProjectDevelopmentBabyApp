@@ -41,6 +41,10 @@ async function processReminders(): Promise<void> {
         if (tokens.length === 0) {
           // No registered devices, still mark as sent to avoid retrying every minute
           await notificationModel.markReminderSent(reminder.reminder_id);
+          // Deactivate one-time reminders even with no tokens
+          if (!reminder.rrule) {
+            await notificationModel.deactivateReminder(reminder.reminder_id);
+          }
           continue;
         }
 
@@ -58,7 +62,6 @@ async function processReminders(): Promise<void> {
 
         // Send batch
         const receipts = await sendBatchPushNotifications(messages);
-
         // Log each notification
         for (let i = 0; i < tokens.length; i++) {
           const receipt = receipts[i];

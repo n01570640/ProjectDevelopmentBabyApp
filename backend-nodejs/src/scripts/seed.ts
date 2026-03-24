@@ -3,11 +3,14 @@
  *
  * Run with: npx ts-node src/scripts/seed.ts
  *
- * Seeds the vaccines_catalog table with CDC-recommended vaccine schedule.
- * Drops and recreates data for a clean load every run.
+ * Seeds catalog/reference tables:
+ *   - vaccines_catalog  (hardcoded CDC schedule)
+ *   - symptoms_catalog  (driven by SYMPTOMS_CATALOG array)
  */
 
 import { getDb } from "../db";
+import sql from "mssql";
+import { SYMPTOMS_CATALOG } from "../data/symptoms.data";
 
 async function seedVaccinesCatalog() {
   const db = await getDb();
@@ -72,20 +75,72 @@ async function seedVaccinesCatalog() {
     SET IDENTITY_INSERT vaccines_catalog OFF;
   `);
 
-  console.log("  Inserted 30 CDC-recommended vaccines");
+  console.log("  Inserted 20 CDC-recommended vaccines");
+}
+
+async function seedSymptomsCatalog() {
+  const db = await getDb();
+
+  // Check if table exists
+  const tableCheck = await db.request().query(`
+    SELECT OBJECT_ID('symptoms_catalog') AS table_id
+  `);
+
+  if (!tableCheck.recordset[0].table_id) {
+    console.log("  symptoms_catalog table does not exist. Skipping.");
+    return;
+  }
+
+  // Use parameterized MERGE for each symptom from the in-memory catalog
+  for (const symptom of SYMPTOMS_CATALOG) {
+    const request = db.request();
+    await request
+      .input("symptom_code", sql.VarChar(50), symptom.symptom_code)
+      .input("symptom_name", sql.NVarChar(200), symptom.symptom_name)
+      .input("description", sql.NVarChar(500), symptom.description)
+      .query(`
+        MERGE symptoms_catalog AS target
+        USING (SELECT @symptom_code AS symptom_code) AS source
+        ON target.symptom_code = source.symptom_code
+        WHEN MATCHED THEN
+          UPDATE SET
+            symptom_name = @symptom_name,
+            description = @description
+        WHEN NOT MATCHED THEN
+          INSERT (symptom_code, symptom_name, description)
+          VALUES (@symptom_code, @symptom_name, @description);
+      `);
+  }
+
+  // Remove any catalog rows that are no longer in the source array
+  const codes = SYMPTOMS_CATALOG.map((s) => s.symptom_code);
+  const placeholders = codes.map((_, i) => `@code${i}`).join(", ");
+  const cleanupRequest = db.request();
+  codes.forEach((code, i) => {
+    cleanupRequest.input(`code${i}`, sql.VarChar(50), code);
+  });
+  await cleanupRequest.query(`
+    DELETE FROM symptoms_catalog
+    WHERE symptom_code NOT IN (${placeholders})
+  `);
+
+  console.log(`  Upserted ${SYMPTOMS_CATALOG.length} symptom codes`);
 }
 
 async function main() {
   console.log("===================================================");
-  console.log("   Baby Tracking App - Vaccines Catalog Seeder");
+  console.log("   Baby Tracking App - Catalog Seeder");
   console.log("===================================================\n");
 
   try {
     console.log("Seeding vaccines_catalog...");
     await seedVaccinesCatalog();
 
+    console.log("Seeding symptoms_catalog...");
+    await seedSymptomsCatalog();
+
     console.log("\n===================================================");
-    console.log("Seeding complete! 30 vaccines loaded.");
+    console.log("Seeding complete!");
     console.log("===================================================\n");
 
     process.exit(0);

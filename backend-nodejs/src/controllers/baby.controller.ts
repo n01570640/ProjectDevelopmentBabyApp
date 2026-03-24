@@ -206,33 +206,23 @@ export async function deleteBaby(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (accessRole === "PRIMARY_CAREGIVER") {
-      // Primary caregiver: delete the baby entirely
-      const deleted = await babyService.deleteBaby(babyId);
+    const result = await babyService.deleteBabyOrRemoveAccess(babyId, userId, accessRole);
 
-      if (!deleted) {
-        res.status(404).json({
-          success: false,
-          message: "Baby not found",
-        });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        message: "Baby and all related data deleted successfully",
-      });
-    } else {
-      // Secondary/Professional: remove only their own access
-      await babyService.removeAccess(babyId, userId);
-
-      res.status(200).json({
-        success: true,
-        message: "Baby removed from your account",
-      });
-    }
+    res.status(200).json({
+      success: true,
+      message: result.message,
+    });
   } catch (error: any) {
     console.error("Error deleting baby:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to delete baby",

@@ -127,22 +127,25 @@ export async function cancelInvitation(
       return;
     }
 
-    const result = await invitationService.cancelInvitation(inviteId, userId, babyId);
+    await invitationService.cancelInvitation(inviteId, userId, babyId);
 
-    if (!result.success) {
+    res.status(200).json({
+      success: true,
+      message: "Invitation cancelled successfully",
+    });
+  } catch (error: any) {
+    console.error("Error cancelling invitation:", error);
+
+    if (error.message?.includes("not found") ||
+        error.message?.includes("Only the inviter") ||
+        error.message?.includes("Cannot cancel")) {
       res.status(400).json({
         success: false,
-        message: result.message,
+        message: error.message,
       });
       return;
     }
 
-    res.status(200).json({
-      success: true,
-      message: result.message,
-    });
-  } catch (error: any) {
-    console.error("Error cancelling invitation:", error);
     res.status(500).json({
       success: false,
       message: "Failed to cancel invitation",
@@ -211,23 +214,28 @@ export async function acceptInvitation(
       userEmail
     );
 
-    if (!result.success) {
-      res.status(400).json({
-        success: false,
-        message: result.message,
-      });
-      return;
-    }
-
     res.status(200).json({
       success: true,
-      message: result.message,
+      message: "Invitation accepted successfully",
       data: {
         baby_id: result.baby_id,
       },
     });
   } catch (error: any) {
     console.error("Error accepting invitation:", error);
+
+    if (error.message?.includes("not found") ||
+        error.message?.includes("already been accepted") ||
+        error.message?.includes("expired") ||
+        error.message?.includes("different email") ||
+        error.message?.includes("already have access")) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to accept invitation",

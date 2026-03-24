@@ -13,64 +13,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import NavBar from "./navBar";
 import { getBabies } from "../../services/babyService";
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors } from "../theme/colors";
 
-const { width, height } = Dimensions.get("window");
-
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
+const { width } = Dimensions.get("window");
 
 type Props = {
   navigation: any;
 };
-
-// =============================================================================
-// OLD HARDCODED DATA - COMMENTED OUT (keeping for reference)
-// =============================================================================
-// type ChildProfile = {
-//   id: number;
-//   name: string;
-//   gender: "male" | "female";
-//   birthDate: string;
-//   heightCm: number;
-//   heightFt: string;
-//   weightKg: number;
-//   weightLbs: string;
-//   guardian: string;
-//   image: any;
-// };
-
-// const childrenData: ChildProfile[] = [
-//   {
-//     id: 1,
-//     name: "Charlie",
-//     gender: "male",
-//     birthDate: "October 14, 2024",
-//     heightCm: 35,
-//     heightFt: "1.78 ft",
-//     weightKg: 10.7,
-//     weightLbs: "22.5 lbs",
-//     guardian: "Layla Nguyen",
-//     image: require("../images/children/charlie.jpg"),
-//   },
-//   {
-//     id: 2,
-//     name: "Michael",
-//     gender: "male",
-//     birthDate: "May 8, 2024",
-//     heightCm: 55,
-//     heightFt: "2.87 ft",
-//     weightKg: 15.6,
-//     weightLbs: "33.2 lbs",
-//     guardian: "Layla Nguyen",
-//     image: require("../images/children/michael.png"),
-//   },
-// ];
-// =============================================================================
 
 // NEW: Type matching API response (BabyWithDetailsDTO)
 type LatestGrowth = {
@@ -185,7 +135,7 @@ export default function Children({ navigation }: Props) {
         {/* Loading state */}
         {loading && (
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#81b6eb" />
+            <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading children...</Text>
           </View>
         )}
@@ -193,7 +143,7 @@ export default function Children({ navigation }: Props) {
         {/* Error state */}
         {!loading && error && (
           <View style={styles.centerContainer}>
-            <Ionicons name="alert-circle-outline" size={48} color="#ff6b6b" />
+            <Ionicons name="alert-circle-outline" size={48} color={colors.errorBorder} />
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={fetchBabies}>
               <Text style={styles.retryButtonText}>Retry</Text>
@@ -235,7 +185,7 @@ export default function Children({ navigation }: Props) {
                               : "female-outline"
                           }
                           size={moderateScale(20)}
-                          color="#57a8f8"
+                          color={colors.accent}
                           style={styles.genderIcon}
                         />
                       )}
@@ -245,7 +195,7 @@ export default function Children({ navigation }: Props) {
                       <Ionicons
                         name="calendar-outline"
                         size={moderateScale(16)}
-                        color="#606162"
+                        color={colors.textSubtitle}
                       />
                       <Text style={styles.dateText}>
                         {formatBirthDate(baby.date_of_birth)}
@@ -340,7 +290,7 @@ const CARD_RADIUS = 18;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
   },
   inner: {
     flex: 1,
@@ -358,19 +308,19 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: moderateScale(16),
-    color: "#606162",
+    color: colors.textSubtitle,
   },
   errorText: {
     marginTop: 12,
     fontSize: moderateScale(16),
-    color: "#ff6b6b",
+    color: colors.errorBorder,
     textAlign: "center",
   },
   retryButton: {
     marginTop: 16,
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
     borderRadius: 20,
   },
   retryButtonText: {
@@ -381,7 +331,7 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 12,
     fontSize: moderateScale(18),
-    color: "#606162",
+    color: colors.textSubtitle,
     fontWeight: "600",
   },
   emptySubtext: {
@@ -399,7 +349,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
     borderRadius: 24,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -411,21 +361,21 @@ const styles = StyleSheet.create({
   },
   searchLabel: {
     fontSize: moderateScale(14),
-    color: "#606162",
+    color: colors.textSubtitle,
     marginRight: 6,
     fontWeight: "700",
   },
   searchInput: {
     flex: 1,
     fontSize: moderateScale(14),
-    color: "#2c2c2c",
+    color: colors.textInput,
   },
   menuButton: {
     marginLeft: 10,
     width: 46,
     height: 46,
     borderRadius: 16,
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -438,7 +388,7 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(60),
   },
   card: {
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
     borderRadius: CARD_RADIUS,
     marginBottom: verticalScale(18),
     shadowColor: "#000",
@@ -468,7 +418,7 @@ const styles = StyleSheet.create({
   },
   childName: {
     fontSize: moderateScale(22),
-    color: "#606162",
+    color: colors.textSubtitle,
     fontWeight: "700",
   },
   genderIcon: {
@@ -481,7 +431,7 @@ const styles = StyleSheet.create({
   dateText: {
     marginLeft: 4,
     fontSize: moderateScale(13),
-    color: "#606162",
+    color: colors.textSubtitle,
   },
   detailRow: {
     flexDirection: "row",
@@ -489,12 +439,12 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: moderateScale(14),
-    color: "#606162",
+    color: colors.textSubtitle,
     fontWeight: "700",
   },
   detailValue: {
     fontSize: moderateScale(14),
-    color: "#606162",
+    color: colors.textSubtitle,
   },
   actionsRow: {
     flexDirection: "row",
@@ -511,7 +461,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
   },
   viewButtonText: {
     fontSize: moderateScale(15),
@@ -540,10 +490,10 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#81b6eb",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

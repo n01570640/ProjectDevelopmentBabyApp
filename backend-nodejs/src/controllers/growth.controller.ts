@@ -128,16 +128,7 @@ export async function getGrowth(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Verify growth record belongs to baby
-    const belongsToBaby = await growthService.growthBelongsToBaby(growthId, babyId);
-
-    if (!belongsToBaby) {
-      res.status(404).json({
-        success: false,
-        message: "Growth record not found",
-      });
-      return;
-    }
+    await growthService.assertGrowthBelongsToBaby(growthId, babyId);
 
     const growth = await growthService.getGrowth(growthId);
 
@@ -155,6 +146,12 @@ export async function getGrowth(req: Request, res: Response): Promise<void> {
     });
   } catch (error: any) {
     console.error("Error getting growth record:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to get growth record",
@@ -176,16 +173,7 @@ export async function updateGrowth(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Verify growth record belongs to baby
-    const belongsToBaby = await growthService.growthBelongsToBaby(growthId, babyId);
-
-    if (!belongsToBaby) {
-      res.status(404).json({
-        success: false,
-        message: "Growth record not found",
-      });
-      return;
-    }
+    await growthService.assertGrowthBelongsToBaby(growthId, babyId);
 
     const data: UpdateGrowthDTO = {};
     if (req.body.weight_kg !== undefined) data.weight_kg = req.body.weight_kg;
@@ -211,6 +199,12 @@ export async function updateGrowth(req: Request, res: Response): Promise<void> {
     });
   } catch (error: any) {
     console.error("Error updating growth record:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to update growth record",
@@ -232,16 +226,7 @@ export async function deleteGrowth(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Verify growth record belongs to baby
-    const belongsToBaby = await growthService.growthBelongsToBaby(growthId, babyId);
-
-    if (!belongsToBaby) {
-      res.status(404).json({
-        success: false,
-        message: "Growth record not found",
-      });
-      return;
-    }
+    await growthService.assertGrowthBelongsToBaby(growthId, babyId);
 
     const deleted = await growthService.deleteGrowth(growthId);
 
@@ -259,6 +244,12 @@ export async function deleteGrowth(req: Request, res: Response): Promise<void> {
     });
   } catch (error: any) {
     console.error("Error deleting growth record:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to delete growth record",

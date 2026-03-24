@@ -22,18 +22,17 @@ export async function createSymptomLog(
     .input("symptom_code", sql.VarChar(50), data.symptom_code)
     .input("started_at", sql.DateTime2, data.started_at ? new Date(data.started_at) : null)
     .input("severity_1_5", sql.TinyInt, data.severity_1_5 ?? null)
-    .input("trigger_type", sql.VarChar(20), data.trigger_type ?? null)
     .input("trigger_note", sql.NVarChar(300), data.trigger_note ?? null)
     .input("associated_med_id", sql.BigInt, data.associated_med_id ?? null)
     .input("notes", sql.NVarChar(1000), data.notes ?? null)
     .input("recorded_by", sql.BigInt, recordedBy)
     .query(`
       INSERT INTO symptom_logs
-        (baby_id, symptom_code, started_at, severity_1_5, trigger_type, trigger_note, associated_med_id, notes, recorded_by)
+        (baby_id, symptom_code, started_at, severity_1_5, trigger_note, associated_med_id, notes, recorded_by)
       OUTPUT INSERTED.*
       VALUES (
         @baby_id, @symptom_code, COALESCE(@started_at, SYSDATETIME()),
-        @severity_1_5, @trigger_type, @trigger_note, @associated_med_id, @notes, @recorded_by
+        @severity_1_5, @trigger_note, @associated_med_id, @notes, @recorded_by
       )
     `);
 
@@ -61,7 +60,7 @@ export async function findSymptomLogById(
  */
 export async function findSymptomLogsByBabyId(
   babyId: number,
-  filters?: { from?: string; to?: string; symptom_code?: string; trigger_type?: string },
+  filters?: { from?: string; to?: string; symptom_code?: string },
   transactionRequest?: sql.Request
 ): Promise<SymptomLogDTO[]> {
   const request = transactionRequest ?? (await getDb()).request();
@@ -80,10 +79,6 @@ export async function findSymptomLogsByBabyId(
   if (filters?.symptom_code) {
     whereClauses.push("symptom_code = @symptom_code");
     request.input("symptom_code", sql.VarChar(50), filters.symptom_code);
-  }
-  if (filters?.trigger_type) {
-    whereClauses.push("trigger_type = @trigger_type");
-    request.input("trigger_type", sql.VarChar(20), filters.trigger_type);
   }
 
   const result = await request.query(`
@@ -119,10 +114,6 @@ export async function updateSymptomLog(
   if (data.severity_1_5 !== undefined) {
     setClauses.push("severity_1_5 = @severity_1_5");
     request.input("severity_1_5", sql.TinyInt, data.severity_1_5);
-  }
-  if (data.trigger_type !== undefined) {
-    setClauses.push("trigger_type = @trigger_type");
-    request.input("trigger_type", sql.VarChar(20), data.trigger_type);
   }
   if (data.trigger_note !== undefined) {
     setClauses.push("trigger_note = @trigger_note");

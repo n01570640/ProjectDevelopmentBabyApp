@@ -1,10 +1,24 @@
 import * as symptomLogModel from "../models/symptom-log.model";
+import * as symptomCatalogModel from "../models/symptom-catalog.model";
 import {
   CreateSymptomLogDTO,
   UpdateSymptomLogDTO,
   SymptomLogDTO,
 } from "../dtos/symptom.dto";
-import { getSymptomByCode, VALID_TRIGGER_TYPES } from "../data/symptoms.data";
+
+/**
+ * List all symptoms from the catalog
+ */
+export async function listSymptoms() {
+  return await symptomCatalogModel.findAll();
+}
+
+/**
+ * Get a single symptom by code from the catalog
+ */
+export async function getSymptomByCode(code: string) {
+  return await symptomCatalogModel.findByCode(code);
+}
 
 /**
  * Create symptom log with business validation
@@ -14,15 +28,10 @@ export async function createSymptomLog(
   recordedBy: number,
   data: CreateSymptomLogDTO
 ): Promise<SymptomLogDTO> {
-  // Validate symptom code exists in catalog
-  const symptom = getSymptomByCode(data.symptom_code);
+  // Validate symptom code exists in DB catalog
+  const symptom = await symptomCatalogModel.findByCode(data.symptom_code);
   if (!symptom) {
     throw new Error(`Invalid symptom code: ${data.symptom_code}`);
-  }
-
-  // Validate trigger type if provided
-  if (data.trigger_type && !VALID_TRIGGER_TYPES.includes(data.trigger_type)) {
-    throw new Error(`Invalid trigger type: ${data.trigger_type}`);
   }
 
   // Validate severity range
@@ -45,7 +54,7 @@ export async function getSymptomLog(symptomLogId: number): Promise<SymptomLogDTO
  */
 export async function getBabySymptomLogs(
   babyId: number,
-  filters?: { from?: string; to?: string; symptom_code?: string; trigger_type?: string }
+  filters?: { from?: string; to?: string; symptom_code?: string }
 ): Promise<SymptomLogDTO[]> {
   return await symptomLogModel.findSymptomLogsByBabyId(babyId, filters);
 }
@@ -59,15 +68,10 @@ export async function updateSymptomLog(
 ): Promise<SymptomLogDTO | null> {
   // Validate symptom code if being updated
   if (data.symptom_code) {
-    const symptom = getSymptomByCode(data.symptom_code);
+    const symptom = await symptomCatalogModel.findByCode(data.symptom_code);
     if (!symptom) {
       throw new Error(`Invalid symptom code: ${data.symptom_code}`);
     }
-  }
-
-  // Validate trigger type if being updated
-  if (data.trigger_type && !VALID_TRIGGER_TYPES.includes(data.trigger_type)) {
-    throw new Error(`Invalid trigger type: ${data.trigger_type}`);
   }
 
   // Validate severity range if being updated
@@ -93,4 +97,17 @@ export async function symptomLogBelongsToBaby(
   babyId: number
 ): Promise<boolean> {
   return await symptomLogModel.symptomLogBelongsToBaby(symptomLogId, babyId);
+}
+
+/**
+ * Assert symptom log belongs to baby, throw if not
+ */
+export async function assertSymptomLogBelongsToBaby(
+  symptomLogId: number,
+  babyId: number
+): Promise<void> {
+  const belongs = await symptomLogModel.symptomLogBelongsToBaby(symptomLogId, babyId);
+  if (!belongs) {
+    throw new Error("Symptom log not found");
+  }
 }

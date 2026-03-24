@@ -88,10 +88,14 @@ export async function sendBatchPushNotifications(
         body: JSON.stringify(batch),
       });
 
-      const result = (await response.json()) as { data?: ExpoPushReceipt[] };
+      const result = (await response.json()) as { data?: ExpoPushReceipt[] | ExpoPushReceipt };
 
-      if (result.data && Array.isArray(result.data)) {
-        receipts.push(...result.data);
+      if (result.data) {
+        if (Array.isArray(result.data)) {
+          receipts.push(...result.data);
+        } else {
+          receipts.push(result.data);
+        }
       }
     } catch (error: any) {
       console.error("Expo batch push error:", error.message);

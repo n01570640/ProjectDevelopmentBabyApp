@@ -51,7 +51,8 @@ babytracker/
 ### Prerequisites
 
 - Node.js 18+ and npm
-- Expo Go app on your phone, or iOS Simulator / Android Emulator
+- Android Emulator (Google Play image) or physical device
+- For push notifications: must use `npx expo run:android` (Expo Go does not support push since SDK 53)
 
 ### Installation
 
@@ -65,11 +66,17 @@ Update the `LOCAL_IPV4` variable in `services/api.js` to your machine's local IP
 
 ### Running
 
+**With Expo Go (no push notifications):**
 ```bash
-npm start
+npx expo start
 ```
 
-Press `a` for Android, `i` for iOS, or `w` for web.
+**With development build (full native support including push notifications):**
+```bash
+npx expo run:android
+```
+
+Note: Push notifications require the development build. Expo Go dropped push support in SDK 53.
 
 ## Services
 
@@ -107,7 +114,7 @@ Base HTTP client used by all other services. Handles:
 
 | Function                                |  Description                                                       |
 |-----------------------------------------|--------------------------------------------------------------------|
-| `createInvitation(babyId, email, role)` | Invite a user by email as `SECONDARY_CAREGIVER` or `PROFESSIONAL`. |
+| `createInvitation(babyId, email, roleId)` | Invite a user by email with role ID (`2` = SECONDARY_CAREGIVER, `3` = PROFESSIONAL). |
 | `getInvitations(babyId)`                | List pending invitations for a baby.                               |
 | `cancelInvitation(babyId, inviteId)`    | Cancel a pending invitation.                                       |
 | `getInvitationByToken(token)`           | View public invitation details (no auth required).                 |
@@ -131,9 +138,8 @@ Base HTTP client used by all other services. Handles:
 |---|---|
 | `getAllSymptoms()` | List all 15 common baby symptoms from catalog. |
 | `getSymptomByCode(code)` | Get symptom details by code (e.g. FEVER). |
-| `getTriggerTypes()` | List all 6 trigger types for dropdowns. |
-| `createSymptomLog(babyId, data)` | Log a symptom with severity, trigger, notes. |
-| `getSymptomLogs(babyId, filters)` | List symptom logs with optional date/code/trigger filters. |
+| `createSymptomLog(babyId, data)` | Log a symptom with severity, trigger note, notes. |
+| `getSymptomLogs(babyId, filters)` | List symptom logs with optional date/code filters. |
 | `getSymptomLog(babyId, symptomLogId)` | Get a single symptom log. |
 | `updateSymptomLog(babyId, symptomLogId, data)` | Update a symptom log. |
 | `deleteSymptomLog(babyId, symptomLogId)` | Delete a symptom log. |
@@ -159,9 +165,17 @@ Base HTTP client used by all other services. Handles:
 
 | Function | Description |
 |---|---|
-| `registerPushToken(deviceToken, platform)` | Register Expo push token with backend (call on app startup). |
+| `registerForPushNotifications()` | Full device registration flow: requests permissions, gets Expo push token, sends to backend. Called automatically on login/register. |
+| `registerPushToken(deviceToken, platform)` | Register Expo push token with backend (used internally by `registerForPushNotifications`). |
 | `unregisterPushToken(deviceToken)` | Unregister push token (call on logout). |
 | `getNotifications(limit)` | Get notification history for the user. |
+
+**Push notification setup (already configured):**
+- Firebase project: `babyapp-cd958` with Android app `com.n01570640.babytracker`
+- `google-services.json` in `android/app/`
+- FCM V1 service account key uploaded to Expo via `eas credentials -p android`
+- `App.js` includes `setNotificationHandler` for foreground notification display
+- Token registration happens automatically after login/register in `login.tsx` and `register.tsx`
 
 ### guidelineService.js — Vaccine Guidelines
 

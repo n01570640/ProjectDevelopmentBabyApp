@@ -1,17 +1,25 @@
 import { Request, Response } from "express";
 import * as symptomService from "../services/symptom.service";
-import { getAllSymptoms, getSymptomByCode, getAllTriggerTypes } from "../data/symptoms.data";
 import { CreateSymptomLogDTO, UpdateSymptomLogDTO } from "../dtos/symptom.dto";
 
 /**
  * GET /api/v1/symptoms
- * List all symptoms from catalog
+ * List all symptoms from DB catalog
  */
 export async function listSymptoms(req: Request, res: Response): Promise<void> {
-  res.status(200).json({
-    success: true,
-    data: getAllSymptoms(),
-  });
+  try {
+    const symptoms = await symptomService.listSymptoms();
+    res.status(200).json({
+      success: true,
+      data: symptoms,
+    });
+  } catch (error: any) {
+    console.error("Error listing symptoms:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to list symptoms",
+    });
+  }
 }
 
 /**
@@ -19,32 +27,29 @@ export async function listSymptoms(req: Request, res: Response): Promise<void> {
  * Get a single symptom by code
  */
 export async function getSymptom(req: Request, res: Response): Promise<void> {
-  const code = req.params.code?.toUpperCase();
-  const symptom = getSymptomByCode(code);
+  try {
+    const code = req.params.code?.toUpperCase();
+    const symptom = await symptomService.getSymptomByCode(code);
 
-  if (!symptom) {
-    res.status(404).json({
-      success: false,
-      message: "Symptom not found",
+    if (!symptom) {
+      res.status(404).json({
+        success: false,
+        message: "Symptom not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: symptom,
     });
-    return;
+  } catch (error: any) {
+    console.error("Error getting symptom:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get symptom",
+    });
   }
-
-  res.status(200).json({
-    success: true,
-    data: symptom,
-  });
-}
-
-/**
- * GET /api/v1/trigger-types
- * List all trigger types
- */
-export async function listTriggerTypes(req: Request, res: Response): Promise<void> {
-  res.status(200).json({
-    success: true,
-    data: getAllTriggerTypes(),
-  });
 }
 
 /**
@@ -70,7 +75,6 @@ export async function createSymptomLog(req: Request, res: Response): Promise<voi
       symptom_code: req.body.symptom_code,
       started_at: req.body.started_at,
       severity_1_5: req.body.severity_1_5,
-      trigger_type: req.body.trigger_type,
       trigger_note: req.body.trigger_note,
       associated_med_id: req.body.associated_med_id,
       notes: req.body.notes,
@@ -88,7 +92,6 @@ export async function createSymptomLog(req: Request, res: Response): Promise<voi
 
     if (
       error.message.includes("Invalid symptom code") ||
-      error.message.includes("Invalid trigger type") ||
       error.message.includes("Severity must be")
     ) {
       res.status(400).json({ success: false, message: error.message });
@@ -119,7 +122,6 @@ export async function listSymptomLogs(req: Request, res: Response): Promise<void
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
       symptom_code: req.query.symptom_code as string | undefined,
-      trigger_type: req.query.trigger_type as string | undefined,
     };
 
     const logs = await symptomService.getBabySymptomLogs(babyId, filters);
@@ -152,11 +154,7 @@ export async function getSymptomLog(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const belongsToBaby = await symptomService.symptomLogBelongsToBaby(symptomLogId, babyId);
-    if (!belongsToBaby) {
-      res.status(404).json({ success: false, message: "Symptom log not found" });
-      return;
-    }
+    await symptomService.assertSymptomLogBelongsToBaby(symptomLogId, babyId);
 
     const log = await symptomService.getSymptomLog(symptomLogId);
     if (!log) {
@@ -170,6 +168,12 @@ export async function getSymptomLog(req: Request, res: Response): Promise<void> 
     });
   } catch (error: any) {
     console.error("Error getting symptom log:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to get symptom log",
@@ -191,17 +195,12 @@ export async function updateSymptomLog(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const belongsToBaby = await symptomService.symptomLogBelongsToBaby(symptomLogId, babyId);
-    if (!belongsToBaby) {
-      res.status(404).json({ success: false, message: "Symptom log not found" });
-      return;
-    }
+    await symptomService.assertSymptomLogBelongsToBaby(symptomLogId, babyId);
 
     const data: UpdateSymptomLogDTO = {};
     if (req.body.symptom_code !== undefined) data.symptom_code = req.body.symptom_code;
     if (req.body.started_at !== undefined) data.started_at = req.body.started_at;
     if (req.body.severity_1_5 !== undefined) data.severity_1_5 = req.body.severity_1_5;
-    if (req.body.trigger_type !== undefined) data.trigger_type = req.body.trigger_type;
     if (req.body.trigger_note !== undefined) data.trigger_note = req.body.trigger_note;
     if (req.body.associated_med_id !== undefined) data.associated_med_id = req.body.associated_med_id;
     if (req.body.notes !== undefined) data.notes = req.body.notes;
@@ -221,10 +220,14 @@ export async function updateSymptomLog(req: Request, res: Response): Promise<voi
   } catch (error: any) {
     console.error("Error updating symptom log:", error);
 
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     if (
-      error.message.includes("Invalid symptom code") ||
-      error.message.includes("Invalid trigger type") ||
-      error.message.includes("Severity must be")
+      error.message?.includes("Invalid symptom code") ||
+      error.message?.includes("Severity must be")
     ) {
       res.status(400).json({ success: false, message: error.message });
       return;
@@ -251,11 +254,7 @@ export async function deleteSymptomLog(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const belongsToBaby = await symptomService.symptomLogBelongsToBaby(symptomLogId, babyId);
-    if (!belongsToBaby) {
-      res.status(404).json({ success: false, message: "Symptom log not found" });
-      return;
-    }
+    await symptomService.assertSymptomLogBelongsToBaby(symptomLogId, babyId);
 
     const deleted = await symptomService.deleteSymptomLog(symptomLogId);
     if (!deleted) {
@@ -269,6 +268,12 @@ export async function deleteSymptomLog(req: Request, res: Response): Promise<voi
     });
   } catch (error: any) {
     console.error("Error deleting symptom log:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to delete symptom log",

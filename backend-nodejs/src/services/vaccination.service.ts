@@ -75,3 +75,16 @@ export async function vaccinationBelongsToBaby(
 ): Promise<boolean> {
   return await vaccinationModel.vaccinationBelongsToBaby(vaccinationId, babyId);
 }
+
+/**
+ * Assert vaccination belongs to baby, throw if not
+ */
+export async function assertVaccinationBelongsToBaby(
+  vaccinationId: number,
+  babyId: number
+): Promise<void> {
+  const belongs = await vaccinationModel.vaccinationBelongsToBaby(vaccinationId, babyId);
+  if (!belongs) {
+    throw new Error("Vaccination not found");
+  }
+}

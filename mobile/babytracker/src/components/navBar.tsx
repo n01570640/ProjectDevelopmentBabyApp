@@ -4,18 +4,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   Text,
-  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-
-const { width } = Dimensions.get("window");
-
-const guidelineBaseWidth = 360;
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
+import { scale, moderateScale } from "../utils/responsive";
+import { colors } from '../theme/colors';
 
 type TabKey = "home" | "tasks" | "schedule" | "stats" | "children" | "profile";
 
@@ -125,11 +119,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   tabButtonInactive: {
-    backgroundColor: "#dddddd", // grey icon-only buttons
+    backgroundColor: colors.inactive, // grey icon-only buttons
   },
   tabButtonActive: {
-    backgroundColor: "#81b6eb", // blue popped-out pill
-    shadowColor: "#81b6eb",
+    backgroundColor: colors.primary, // blue popped-out pill
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
     shadowRadius: 7,

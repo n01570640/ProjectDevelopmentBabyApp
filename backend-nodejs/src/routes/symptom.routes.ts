@@ -21,9 +21,6 @@ router.get("/symptoms", verifyTokenMiddleware, symptomController.listSymptoms);
 // GET /api/v1/symptoms/:code - Get symptom by code
 router.get("/symptoms/:code", verifyTokenMiddleware, symptomController.getSymptom);
 
-// GET /api/v1/trigger-types - List all trigger types
-router.get("/trigger-types", verifyTokenMiddleware, symptomController.listTriggerTypes);
-
 // ─── Baby-scoped symptom log routes ──────────────────────────────
 // These are also mounted at /api/v1 but use /babies/:babyId prefix
 

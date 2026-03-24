@@ -67,6 +67,7 @@ export async function loginUser(req: Request, res: Response): Promise<void> {
       user: safeUser
     });
   } catch (error: any) {
+    console.error("Login error:", error);
     // Invalid credentials should return 401
     res.status(401).json({
       success: false,

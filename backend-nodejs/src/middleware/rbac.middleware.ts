@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import * as caregiverAccessModel from "../models/caregiver-access.model";
-import { Permission, AccessRole, CaregiverAccessDTO } from "../dtos/caregiver-access.dto";
+import { Permission, ROLE_PRIMARY, CaregiverAccessDTO } from "../dtos/caregiver-access.dto";
 
 // Extend Express Request to include baby access info
 declare global {
@@ -137,7 +137,7 @@ export async function requirePrimaryCaregiver(
   try {
     // If babyAccess is already attached, use it
     if (req.babyAccess) {
-      if (req.babyAccess.access_role === AccessRole.PRIMARY_CAREGIVER) {
+      if (req.babyAccess.access_role === ROLE_PRIMARY) {
         next();
         return;
       } else {

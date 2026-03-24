@@ -1,6 +1,17 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import * as Notifications from "expo-notifications";
+
+// Show notifications even when the app is in the foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 import Landing from "./src/components/landing";
 import Login from "./src/components/login";
@@ -11,12 +22,22 @@ import HistoryScreen from "./src/components/HistoryScreen";
 import ScheduleScreen from "./src/components/ScheduleScreen";
 import AddChildScreen from "./src/components/AddChildScreen";
 import BabyDetailScreen from "./src/components/BabyDetailScreen";
+import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
 
 const Stack = createNativeStackNavigator();
 
+const linking = {
+  prefixes: ["babytracker://"],
+  config: {
+    screens: {
+      AcceptInvitation: "invitations/:token",
+    },
+  },
+};
+
 export default function App() {
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator initialRouteName="Landing">
         <Stack.Screen
           name="Landing"
@@ -61,6 +82,11 @@ export default function App() {
         <Stack.Screen
           name="BabyDetail"
           component={BabyDetailScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AcceptInvitation"
+          component={AcceptInvitationScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

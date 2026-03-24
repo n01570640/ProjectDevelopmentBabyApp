@@ -1,4 +1,5 @@
 import apiClient from './api';
+import { apiCall } from './apiWrapper';
 
 // ─── BABY ANALYTICS ──────────────────────────────────────────────────────────
 
@@ -8,27 +9,13 @@ import apiClient from './api';
  *          vaccination count, upcoming tasks/reminders, activity breakdown
  * @param {number} babyId
  */
-export const getBabySummary = async (babyId) => {
-  try {
-    const response = await apiClient.get(`/analytics/baby/${babyId}/summary`);
-    return response;
-  } catch (error) {
-    console.error(`Failed to fetch summary for baby ${babyId}:`, error);
-    return { success: false, message: error.message || 'Failed to fetch baby summary' };
-  }
-};
+export const getBabySummary = (babyId) =>
+  apiCall(() => apiClient.get(`/analytics/baby/${babyId}/summary`), 'Failed to fetch baby summary');
 
 /**
  * Get graph/chart data for a baby
  * Returns: growth over time, activity frequency by week, symptom frequency by week
  * @param {number} babyId
  */
-export const getBabyGraphs = async (babyId) => {
-  try {
-    const response = await apiClient.get(`/analytics/baby/${babyId}/graphs`);
-    return response;
-  } catch (error) {
-    console.error(`Failed to fetch graphs for baby ${babyId}:`, error);
-    return { success: false, message: error.message || 'Failed to fetch baby graphs' };
-  }
-};
+export const getBabyGraphs = (babyId) =>
+  apiCall(() => apiClient.get(`/analytics/baby/${babyId}/graphs`), 'Failed to fetch baby graphs');

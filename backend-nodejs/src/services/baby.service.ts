@@ -1,7 +1,8 @@
 import { CreateBabyDTO, BabyDTO, UpdateBabyDTO, BabyWithAccessDTO, BabyWithDetailsDTO } from "../dtos/baby.dto";
 import * as babyModel from "../models/baby.model";
 import * as caregiverAccessModel from "../models/caregiver-access.model";
-import { AccessRole } from "../dtos/caregiver-access.dto";
+import * as caregiverService from "./caregiver.service";
+import { ROLE_PRIMARY } from "../dtos/caregiver-access.dto";
 import sql from "mssql";
 import { getDb } from "../db";
 
@@ -27,7 +28,7 @@ export async function createBabyWithAccess(
       {
         baby_id: baby.baby_id,
         user_id: userId,
-        access_role: AccessRole.PRIMARY_CAREGIVER,
+        access_role: ROLE_PRIMARY,
         can_edit_health: true,
         can_edit_activities: true,
         can_share: true,
@@ -89,8 +90,24 @@ export async function deleteBaby(baby_id: number): Promise<boolean> {
 }
 
 /**
- * Remove a user's access to a baby (for secondary/professional caregivers)
+ * Delete baby or remove access based on the user's role.
+ * Primary caregiver: deletes the baby entirely.
+ * Secondary/Professional: removes only their own access.
+ * Returns a message describing what was done.
  */
-export async function removeAccess(baby_id: number, user_id: number): Promise<boolean> {
-  return await caregiverAccessModel.removeCaregiverAccess(user_id, baby_id);
+export async function deleteBabyOrRemoveAccess(
+  babyId: number,
+  userId: number,
+  accessRole: number
+): Promise<{ message: string }> {
+  if (accessRole === ROLE_PRIMARY) {
+    const deleted = await babyModel.deleteBaby(babyId);
+    if (!deleted) {
+      throw new Error("Baby not found");
+    }
+    return { message: "Baby and all related data deleted successfully" };
+  }
+
+  await caregiverService.removeAccess(userId, babyId);
+  return { message: "Baby removed from your account" };
 }

@@ -1,16 +1,18 @@
 /**
- * Common Baby Symptoms Catalog
- * Static reference data for symptom tracking.
- * Stored in-memory (not database) — same pattern as vaccines.data.ts
+ * Symptoms Catalog - Seed Data
+ *
+ * This file is the source of truth for populating the symptoms_catalog DB table.
+ * Used ONLY by the seed script (src/scripts/seed.ts).
+ * At runtime, the API reads from the symptoms_catalog table directly.
  */
 
-export interface SymptomData {
+export interface SymptomSeedData {
   symptom_code: string;
   symptom_name: string;
   description: string;
 }
 
-export const SYMPTOMS_CATALOG: SymptomData[] = [
+export const SYMPTOMS_CATALOG: SymptomSeedData[] = [
   {
     symptom_code: "FEVER",
     symptom_name: "Fever",
@@ -87,50 +89,3 @@ export const SYMPTOMS_CATALOG: SymptomData[] = [
     description: "Other symptom not listed above",
   },
 ];
-
-// Pre-computed map for O(1) lookups by code
-const SYMPTOMS_MAP = new Map<string, SymptomData>(
-  SYMPTOMS_CATALOG.map((s) => [s.symptom_code, s])
-);
-
-// Set of valid symptom codes for validation
-export const VALID_SYMPTOM_CODES = SYMPTOMS_CATALOG.map((s) => s.symptom_code);
-
-/**
- * Get all symptoms from catalog
- */
-export function getAllSymptoms(): SymptomData[] {
-  return SYMPTOMS_CATALOG;
-}
-
-/**
- * Get symptom by code
- */
-export function getSymptomByCode(code: string): SymptomData | undefined {
-  return SYMPTOMS_MAP.get(code);
-}
-
-// ─── Trigger Types ──────────────────────────────────────────────
-
-export interface TriggerTypeData {
-  code: string;
-  label: string;
-}
-
-export const TRIGGER_TYPES: TriggerTypeData[] = [
-  { code: "MEDICATION", label: "Medication Reaction" },
-  { code: "FOOD", label: "Food/Formula Reaction" },
-  { code: "WEATHER", label: "Weather Related" },
-  { code: "ENVIRONMENT", label: "Environmental" },
-  { code: "VACCINATION", label: "Post-Vaccination" },
-  { code: "OTHER", label: "Other" },
-];
-
-export const VALID_TRIGGER_TYPES = TRIGGER_TYPES.map((t) => t.code);
-
-/**
- * Get all trigger types
- */
-export function getAllTriggerTypes(): TriggerTypeData[] {
-  return TRIGGER_TYPES;
-}

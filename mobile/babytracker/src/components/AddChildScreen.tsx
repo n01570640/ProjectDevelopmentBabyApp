@@ -8,20 +8,13 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Dimensions,
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { createBaby } from "../../services/babyService";
-
-const { width, height } = Dimensions.get("window");
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors } from "../theme/colors";
 
 type Props = {
   navigation: any;
@@ -130,7 +123,7 @@ export default function AddChildScreen({ navigation }: Props) {
         {/* Avatar placeholder */}
         <View style={styles.avatarWrap}>
           <View style={styles.avatar}>
-            <Ionicons name="person-add-outline" size={moderateScale(48)} color="#81b6eb" />
+            <Ionicons name="person-add-outline" size={moderateScale(48)} color={colors.primary} />
           </View>
           <Text style={styles.avatarHint}>Fill in the details below</Text>
         </View>
@@ -178,7 +171,7 @@ export default function AddChildScreen({ navigation }: Props) {
                 <Ionicons
                   name={s === "male" ? "male-outline" : "female-outline"}
                   size={moderateScale(16)}
-                  color={sex === s ? "#fff" : "#4A90D9"}
+                  color={sex === s ? "#fff" : colors.primaryDark}
                   style={{ marginRight: 5 }}
                 />
                 <Text style={[styles.chipText, sex === s && styles.chipTextActive]}>
@@ -301,7 +294,7 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(50),
     backgroundColor: "#eaf3fb",
     borderWidth: 2,
-    borderColor: "#81b6eb",
+    borderColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: verticalScale(10),
@@ -349,19 +342,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1.5,
-    borderColor: "#4A90D9",
+    borderColor: colors.primaryDark,
     borderRadius: 20,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(7),
     backgroundColor: "#eaf3fb",
   },
   chipActive: {
-    backgroundColor: "#4A90D9",
-    borderColor: "#4A90D9",
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
   },
   chipText: {
     fontSize: moderateScale(13),
-    color: "#4A90D9",
+    color: colors.primaryDark,
     fontWeight: "600",
   },
   chipTextActive: {
@@ -374,11 +367,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: scale(8),
-    backgroundColor: "#4A90D9",
+    backgroundColor: colors.primaryDark,
     borderRadius: 14,
     paddingVertical: verticalScale(15),
     marginTop: verticalScale(10),
-    shadowColor: "#4A90D9",
+    shadowColor: colors.primaryDark,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

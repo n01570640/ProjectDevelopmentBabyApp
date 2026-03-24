@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { getDb } from './db';
-import userRoutes from "./routes/user.routes";
 import authRoutes from "./routes/auth.routes";
 import babyRoutes from "./routes/baby.routes";
 import invitationRoutes from "./routes/invitation.routes";
@@ -51,7 +50,6 @@ app.use(express.urlencoded({ extended: true }));
 // ROUTES
 // ------------------------------------------------------------
 app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/babies", babyRoutes);
 app.use("/api/v1/babies", vaccinationRoutes); // Handles /babies/:babyId/vaccinations
 app.use("/api/v1/babies", growthRoutes);       // /babies/:babyId/growth
@@ -59,7 +57,7 @@ app.use("/api/v1/babies", activityRoutes);     // /babies/:babyId/activities
 app.use("/api/v1/babies", taskRoutes);         // /babies/:babyId/tasks
 app.use("/api/v1/babies", reminderRoutes);     // /babies/:babyId/reminders
 app.use("/api/v1", invitationRoutes); // Handles both /babies/:babyId/invitations and /invitations/:token
-app.use("/api/v1", symptomRoutes);              // /symptoms, /trigger-types, /babies/:babyId/symptoms
+app.use("/api/v1", symptomRoutes);              // /symptoms, /babies/:babyId/symptoms
 app.use("/api/v1/babies", medicationRoutes);    // /babies/:babyId/medications
 app.use("/api/v1/analytics", analyticsRoutes);      // /analytics/baby/:babyId/summary, /graphs
 app.use("/api/v1/notifications", notificationRoutes); // /notifications/register-token, /notifications
@@ -104,12 +102,10 @@ app.get('/api/v1', (req, res) => {
     message: 'Baby Tracking API v1.0',
     endpoints: {
       auth: '/api/v1/auth',
-      users: '/api/v1/users',
       babies: '/api/v1/babies',
       vaccinations: '/api/v1/babies/:babyId/vaccinations',
       invitations: '/api/v1/babies/:babyId/invitations',
       symptoms_catalog: '/api/v1/symptoms',
-      trigger_types: '/api/v1/trigger-types',
       symptom_logs: '/api/v1/babies/:babyId/symptoms',
       medications: '/api/v1/babies/:babyId/medications',
       analytics_summary: '/api/v1/analytics/baby/:babyId/summary',

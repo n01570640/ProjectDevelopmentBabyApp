@@ -16,7 +16,6 @@ export interface SymptomLogDTO {
   symptom_code: string;
   started_at: string;
   severity_1_5: number | null;
-  trigger_type: string | null;
   trigger_note: string | null;
   associated_med_id: number | null;
   notes: string | null;
@@ -28,7 +27,6 @@ export interface CreateSymptomLogDTO {
   symptom_code: string;
   started_at?: string;
   severity_1_5?: number;
-  trigger_type?: string;
   trigger_note?: string;
   associated_med_id?: number;
   notes?: string;
@@ -39,7 +37,6 @@ export interface UpdateSymptomLogDTO {
   symptom_code?: string;
   started_at?: string;
   severity_1_5?: number;
-  trigger_type?: string;
   trigger_note?: string;
   associated_med_id?: number;
   notes?: string;

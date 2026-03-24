@@ -83,3 +83,16 @@ export async function medicationBelongsToBaby(
 ): Promise<boolean> {
   return await medicationModel.medicationBelongsToBaby(medId, babyId);
 }
+
+/**
+ * Assert medication belongs to baby, throw if not
+ */
+export async function assertMedicationBelongsToBaby(
+  medId: number,
+  babyId: number
+): Promise<void> {
+  const belongs = await medicationModel.medicationBelongsToBaby(medId, babyId);
+  if (!belongs) {
+    throw new Error("Medication not found");
+  }
+}

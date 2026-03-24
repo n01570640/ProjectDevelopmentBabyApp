@@ -14,26 +14,24 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { registerUser } from "../../services/authService";
+import { registerForPushNotifications } from "../../services/notificationService";
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors, gradients } from '../theme/colors';
 
 const { width, height } = Dimensions.get("window");
 
-// Reference sizes for scaling (same as login)
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
-
 type Props = {
   navigation: any;
+  route?: any;
 };
 
-export default function SignUp({ navigation }: Props) {
+export default function SignUp({ navigation, route }: Props) {
+  const inviteEmail = route?.params?.inviteEmail ?? "";
+  const inviteToken = route?.params?.inviteToken ?? "";
   const [formData, setFormData] = useState({
     fullName: "",
-    email: "",
+    email: inviteEmail,
+    phone: "",
     password: "",
     confirmPassword: "",
   });
@@ -108,21 +106,28 @@ export default function SignUp({ navigation }: Props) {
         fullName: formData.fullName,
         email: formData.email,
         password: formData.password,
-        phone: "",
+        phone: formData.phone,
       });
 
       setLoading(false);
 
       if (response.success) {
+        // Register device for push notifications (non-blocking)
+        registerForPushNotifications();
         // Registration successful - show in-page message
         setSuccessMessage("Your account has been created successfully!");
         setError("");
         setTimeout(() => {
-          navigation.navigate("Login");
+          navigation.navigate("Login", inviteEmail ? { inviteEmail } : undefined);
         }, 2000);
       } else {
         // Show error from backend
-        setError(response.message || "Registration failed. Please try again.");
+        if (response.errors && Array.isArray(response.errors)) {
+          const details = response.errors.map((e: any) => e.message).join("\n");
+          setError(details);
+        } else {
+          setError(response.message || "Registration failed. Please try again.");
+        }
       }
     } catch (err) {
       setLoading(false);
@@ -137,7 +142,7 @@ export default function SignUp({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={["#fdfdfd", "#fafafa", "#f1f1f1"]}
+      colors={gradients.background}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
@@ -173,13 +178,13 @@ export default function SignUp({ navigation }: Props) {
                 <Ionicons
                   name="person-outline"
                   size={moderateScale(20)}
-                  color="#7a7a7a"
+                  color={colors.inputIcon}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
                   placeholder="Full Name"
-                  placeholderTextColor="#a0a0a0"
+                  placeholderTextColor={colors.placeholder}
                   value={formData.fullName}
                   onChangeText={(value) => handleInputChange("fullName", value)}
                   autoCapitalize="words"
@@ -194,17 +199,39 @@ export default function SignUp({ navigation }: Props) {
                 <Ionicons
                   name="mail-outline"
                   size={moderateScale(20)}
-                  color="#7a7a7a"
+                  color={colors.inputIcon}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[styles.input, inviteEmail ? { color: colors.textTertiary } : null]}
+                  placeholder="Email"
+                  placeholderTextColor={colors.placeholder}
+                  value={formData.email}
+                  onChangeText={inviteEmail ? undefined : (value) => handleInputChange("email", value)}
+                  editable={!inviteEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            {/* Phone Input */}
+            <View style={styles.inputWrapper}>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="call-outline"
+                  size={moderateScale(20)}
+                  color={colors.inputIcon}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor="#a0a0a0"
-                  value={formData.email}
-                  onChangeText={(value) => handleInputChange("email", value)}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
+                  placeholder="Phone Number (optional)"
+                  placeholderTextColor={colors.placeholder}
+                  value={formData.phone}
+                  onChangeText={(value) => handleInputChange("phone", value)}
+                  keyboardType="phone-pad"
                   autoCorrect={false}
                 />
               </View>
@@ -216,13 +243,13 @@ export default function SignUp({ navigation }: Props) {
                 <Ionicons
                   name="lock-closed-outline"
                   size={moderateScale(20)}
-                  color="#7a7a7a"
+                  color={colors.inputIcon}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
                   placeholder="Password"
-                  placeholderTextColor="#a0a0a0"
+                  placeholderTextColor={colors.placeholder}
                   value={formData.password}
                   onChangeText={(value) => handleInputChange("password", value)}
                   secureTextEntry={!showPassword}
@@ -236,7 +263,7 @@ export default function SignUp({ navigation }: Props) {
                   <Ionicons
                     name={showPassword ? "eye-outline" : "eye-off-outline"}
                     size={moderateScale(20)}
-                    color="#7a7a7a"
+                    color={colors.inputIcon}
                   />
                 </TouchableOpacity>
               </View>
@@ -248,13 +275,13 @@ export default function SignUp({ navigation }: Props) {
                 <Ionicons
                   name="lock-closed-outline"
                   size={moderateScale(20)}
-                  color="#7a7a7a"
+                  color={colors.inputIcon}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
                   placeholder="Confirm Password"
-                  placeholderTextColor="#a0a0a0"
+                  placeholderTextColor={colors.placeholder}
                   value={formData.confirmPassword}
                   onChangeText={(value) => handleInputChange("confirmPassword", value)}
                   secureTextEntry={!showConfirmPassword}
@@ -268,7 +295,7 @@ export default function SignUp({ navigation }: Props) {
                   <Ionicons
                     name={showConfirmPassword ? "eye-outline" : "eye-off-outline"}
                     size={moderateScale(20)}
-                    color="#7a7a7a"
+                    color={colors.inputIcon}
                   />
                 </TouchableOpacity>
               </View>
@@ -286,7 +313,7 @@ export default function SignUp({ navigation }: Props) {
                     <Ionicons
                       name="checkmark"
                       size={moderateScale(16)}
-                      color="#81b6eb"
+                      color={colors.primary}
                     />
                   )}
                 </View>
@@ -322,7 +349,7 @@ export default function SignUp({ navigation }: Props) {
                 style={[styles.buttonTapArea, loading && styles.buttonDisabled]}
               >
                 <LinearGradient
-                  colors={["#8ec6ff", "#81b6eb"]}
+                  colors={gradients.button}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.signUpButton}
@@ -349,12 +376,13 @@ export default function SignUp({ navigation }: Props) {
               <Ionicons
                 name="arrow-back"
                 size={moderateScale(20)}
-                color="#81b6eb"
+                color={colors.primary}
                 style={{ marginRight: 6 }}
               />
               <Text style={styles.goBackText}>Go Back</Text>
             </TouchableOpacity>
           </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -376,7 +404,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: width * 0.08,
     paddingTop: verticalScale(60),
-    paddingBottom: verticalScale(40),
+    paddingBottom: verticalScale(80),
   },
   header: {
     marginBottom: verticalScale(40),
@@ -390,13 +418,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: moderateScale(32),
     fontWeight: "700",
-    color: "#81b6eb",
+    color: colors.primary,
     textAlign: "center",
     marginBottom: verticalScale(8),
   },
   welcomeText: {
     fontSize: moderateScale(16),
-    color: "#7a7a7a",
+    color: colors.inputIcon,
     fontWeight: "400",
     textAlign: "center",
   },
@@ -409,7 +437,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
     borderRadius: moderateScale(12),
     paddingHorizontal: moderateScale(16),
     paddingVertical: verticalScale(14),
@@ -428,7 +456,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: moderateScale(15),
-    color: "#2c2c2c",
+    color: colors.textInput,
     fontWeight: "500",
   },
   eyeIcon: {
@@ -447,22 +475,22 @@ const styles = StyleSheet.create({
     height: moderateScale(20),
     borderRadius: moderateScale(5),
     borderWidth: 2,
-    borderColor: "#81b6eb",
+    borderColor: colors.primary,
     marginRight: moderateScale(12),
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
     marginTop: moderateScale(2),
   },
   termsText: {
     flex: 1,
     fontSize: moderateScale(14),
-    color: "#5a5a5a",
+    color: colors.textMuted,
     fontWeight: "400",
     lineHeight: moderateScale(20),
   },
   termsLink: {
-    color: "#81b6eb",
+    color: colors.primary,
     fontWeight: "600",
   },
   buttonWrapper: {
@@ -487,7 +515,7 @@ const styles = StyleSheet.create({
     borderRadius: BUTTON_RADIUS,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#81b6eb",
+    shadowColor: colors.primary,
     shadowOffset: {
       width: 0,
       height: 4,
@@ -510,12 +538,12 @@ const styles = StyleSheet.create({
   },
   signInPrompt: {
     fontSize: moderateScale(14),
-    color: "#7a7a7a",
+    color: colors.inputIcon,
     fontWeight: "400",
   },
   signInLink: {
     fontSize: moderateScale(14),
-    color: "#81b6eb",
+    color: colors.primary,
     fontWeight: "700",
   },
   goBackContainer: {
@@ -526,12 +554,12 @@ const styles = StyleSheet.create({
   },
   goBackText: {
     fontSize: moderateScale(16),
-    color: "#81b6eb",
+    color: colors.primary,
     fontWeight: "600",
   },
   successContainer: {
-    backgroundColor: "#e6f9e6",
-    borderLeftColor: "#4caf50",
+    backgroundColor: colors.successLight,
+    borderLeftColor: colors.successBorder,
     borderLeftWidth: 4,
     borderRadius: moderateScale(8),
     paddingHorizontal: moderateScale(12),
@@ -540,12 +568,12 @@ const styles = StyleSheet.create({
   },
   successText: {
     fontSize: moderateScale(13),
-    color: "#2e7d32",
+    color: colors.successDark,
     fontWeight: "500",
   },
   errorContainer: {
-    backgroundColor: "#fce4e4",
-    borderLeftColor: "#ff6b6b",
+    backgroundColor: colors.errorLight,
+    borderLeftColor: colors.errorBorder,
     borderLeftWidth: 4,
     borderRadius: moderateScale(8),
     paddingHorizontal: moderateScale(12),
@@ -554,7 +582,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: moderateScale(13),
-    color: "#c92a2a",
+    color: colors.errorDark,
     fontWeight: "500",
   },
   buttonDisabled: {

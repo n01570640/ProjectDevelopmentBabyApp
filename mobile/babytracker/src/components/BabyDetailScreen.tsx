@@ -15,14 +15,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { getBaby, updateBaby, getLatestGrowth, recordGrowth } from "../../services/babyService";
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors } from "../theme/colors";
 
-// ─── SCALING ──────────────────────────────────────────────────────────────────
-const { width, height } = Dimensions.get("window");
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-const scale = (s: number) => (width / guidelineBaseWidth) * s;
-const verticalScale = (s: number) => (height / guidelineBaseHeight) * s;
-const moderateScale = (s: number, f = 0.5) => s + (scale(s) - s) * f;
+const { height } = Dimensions.get("window");
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const cmToFt = (cm: number | null) =>
@@ -93,7 +89,7 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4A90D9" />
+        <ActivityIndicator size="large" color={colors.primaryDark} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -112,8 +108,8 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
   }
 
   const isMale = baby.sex === "male";
-  const accentColor = isMale ? "#4A90D9" : "#E87EA1";
-  const accentLight = isMale ? "#EAF3FB" : "#FDECF3";
+  const accentColor = isMale ? colors.primaryDark : colors.female;
+  const accentLight = isMale ? colors.maleLight : colors.femaleLight;
 
   return (
     <View style={styles.container}>
@@ -704,7 +700,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: "#4A90D9",
+    backgroundColor: colors.primaryDark,
     borderRadius: 20,
   },
   backFallbackText: { color: "#fff", fontWeight: "700" },

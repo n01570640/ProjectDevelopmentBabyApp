@@ -90,11 +90,7 @@ export async function getMedication(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const belongsToBaby = await medicationService.medicationBelongsToBaby(medicationId, babyId);
-    if (!belongsToBaby) {
-      res.status(404).json({ success: false, message: "Medication not found" });
-      return;
-    }
+    await medicationService.assertMedicationBelongsToBaby(medicationId, babyId);
 
     const medication = await medicationService.getMedication(medicationId);
     if (!medication) {
@@ -108,6 +104,12 @@ export async function getMedication(req: Request, res: Response): Promise<void> 
     });
   } catch (error: any) {
     console.error("Error getting medication:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to get medication",
@@ -129,11 +131,7 @@ export async function updateMedication(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const belongsToBaby = await medicationService.medicationBelongsToBaby(medicationId, babyId);
-    if (!belongsToBaby) {
-      res.status(404).json({ success: false, message: "Medication not found" });
-      return;
-    }
+    await medicationService.assertMedicationBelongsToBaby(medicationId, babyId);
 
     const data: UpdateMedicationDTO = {};
     if (req.body.name !== undefined) data.name = req.body.name;
@@ -159,7 +157,12 @@ export async function updateMedication(req: Request, res: Response): Promise<voi
   } catch (error: any) {
     console.error("Error updating medication:", error);
 
-    if (error.message.includes("End date cannot be before start date")) {
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
+    if (error.message?.includes("End date cannot be before start date")) {
       res.status(400).json({ success: false, message: error.message });
       return;
     }
@@ -185,11 +188,7 @@ export async function deleteMedication(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const belongsToBaby = await medicationService.medicationBelongsToBaby(medicationId, babyId);
-    if (!belongsToBaby) {
-      res.status(404).json({ success: false, message: "Medication not found" });
-      return;
-    }
+    await medicationService.assertMedicationBelongsToBaby(medicationId, babyId);
 
     const deleted = await medicationService.deleteMedication(medicationId);
     if (!deleted) {
@@ -203,6 +202,12 @@ export async function deleteMedication(req: Request, res: Response): Promise<voi
     });
   } catch (error: any) {
     console.error("Error deleting medication:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to delete medication",

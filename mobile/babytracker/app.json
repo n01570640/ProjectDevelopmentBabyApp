@@ -2,20 +2,32 @@
   "expo": {
     "name": "babytracker",
     "slug": "babytracker",
+    "scheme": "babytracker",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "package": "com.n01570640.babytracker"
     },
     "web": {
       "bundler": "metro"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8400ade0-9e12-4762-b5a2-83a82291e6e8"
+      }
+    },
+    "owner": "n01570640"
   }
 }

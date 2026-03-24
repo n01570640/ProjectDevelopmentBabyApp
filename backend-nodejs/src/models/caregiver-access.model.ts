@@ -2,8 +2,9 @@ import { getDb } from "../db";
 import sql from "mssql";
 import {
   CaregiverAccessDTO,
+  CaregiverWithUserDTO,
   CreateCaregiverAccessDTO,
-  AccessRole,
+  ROLE_PRIMARY,
   Permission,
 } from "../dtos/caregiver-access.dto";
 
@@ -21,11 +22,13 @@ export async function getUserBabyAccess(
     .input("user_id", sql.BigInt, userId)
     .input("baby_id", sql.BigInt, babyId)
     .query(`
-      SELECT baby_id, user_id, access_role,
-             can_edit_health, can_edit_activities, can_share,
-             invited_at, accepted_at
-      FROM caregiver_baby_access
-      WHERE user_id = @user_id AND baby_id = @baby_id
+      SELECT ca.baby_id, ca.user_id, ca.access_role,
+             r.role_name,
+             ca.can_edit_health, ca.can_edit_activities, ca.can_share,
+             ca.invited_at, ca.accepted_at
+      FROM caregiver_baby_access ca
+      JOIN roles r ON ca.access_role = r.role_id
+      WHERE ca.user_id = @user_id AND ca.baby_id = @baby_id
     `);
 
   if (result.recordset.length === 0) {
@@ -36,7 +39,8 @@ export async function getUserBabyAccess(
   return {
     baby_id: record.baby_id,
     user_id: record.user_id,
-    access_role: record.access_role as AccessRole,
+    access_role: record.access_role,
+    role_name: record.role_name,
     can_edit_health: record.can_edit_health,
     can_edit_activities: record.can_edit_activities,
     can_share: record.can_share,
@@ -75,7 +79,7 @@ export async function isPrimaryCaregiver(
     return false;
   }
 
-  return access.access_role === AccessRole.PRIMARY_CAREGIVER;
+  return access.access_role === ROLE_PRIMARY;
 }
 
 /**
@@ -108,22 +112,60 @@ export async function getBabyCaregivers(
     .request()
     .input("baby_id", sql.BigInt, babyId)
     .query(`
-      SELECT baby_id, user_id, access_role,
-             can_edit_health, can_edit_activities, can_share,
-             invited_at, accepted_at
-      FROM caregiver_baby_access
-      WHERE baby_id = @baby_id
+      SELECT ca.baby_id, ca.user_id, ca.access_role,
+             r.role_name,
+             ca.can_edit_health, ca.can_edit_activities, ca.can_share,
+             ca.invited_at, ca.accepted_at
+      FROM caregiver_baby_access ca
+      JOIN roles r ON ca.access_role = r.role_id
+      WHERE ca.baby_id = @baby_id
     `);
 
   return result.recordset.map((record) => ({
     baby_id: record.baby_id,
     user_id: record.user_id,
-    access_role: record.access_role as AccessRole,
+    access_role: record.access_role,
+    role_name: record.role_name,
     can_edit_health: record.can_edit_health,
     can_edit_activities: record.can_edit_activities,
     can_share: record.can_share,
     invited_at: record.invited_at,
     accepted_at: record.accepted_at,
+  }));
+}
+
+/**
+ * Get all caregivers for a baby with user details (name, email)
+ */
+export async function getBabyCaregiversWithUserInfo(
+  babyId: number
+): Promise<CaregiverWithUserDTO[]> {
+  const db = await getDb();
+
+  const result = await db
+    .request()
+    .input("baby_id", sql.BigInt, babyId)
+    .query(`
+      SELECT ca.baby_id, ca.user_id, ca.access_role,
+             r.role_name,
+             ca.can_edit_health, ca.can_edit_activities, ca.can_share,
+             u.full_name, u.email
+      FROM caregiver_baby_access ca
+      JOIN roles r ON ca.access_role = r.role_id
+      JOIN users u ON ca.user_id = u.user_id
+      WHERE ca.baby_id = @baby_id
+    `);
+
+  return result.recordset.map((record) => ({
+    baby_id: record.baby_id,
+    user_id: record.user_id,
+    access_role: record.access_role,
+    role_name: record.role_name,
+    can_edit_health: record.can_edit_health,
+    can_edit_activities: record.can_edit_activities,
+    can_share: record.can_share,
+    full_name: record.full_name,
+    email: record.email,
   }));
 }
 
@@ -141,7 +183,7 @@ export async function createCaregiverAccess(
   request
     .input("baby_id", sql.BigInt, data.baby_id)
     .input("user_id", sql.BigInt, data.user_id)
-    .input("access_role", sql.VarChar(30), data.access_role)
+    .input("access_role", sql.Int, data.access_role)
     .input("can_edit_health", sql.Bit, data.can_edit_health)
     .input("can_edit_activities", sql.Bit, data.can_edit_activities)
     .input("can_share", sql.Bit, data.can_share);
@@ -154,14 +196,15 @@ export async function createCaregiverAccess(
       INSERT INTO caregiver_baby_access
         (baby_id, user_id, access_role, can_edit_health, can_edit_activities, can_share, invited_at, accepted_at)
       OUTPUT INSERTED.*
-      VALUES (@baby_id, @user_id, @access_role, @can_edit_health, @can_edit_activities, @can_share, ${data.invited_at ? '@invited_at' : 'SYSDATETIME()'}, SYSDATETIME())
+      VALUES (@baby_id, @user_id, @access_role, @can_edit_health, @can_edit_activities, @can_share, ${data.invited_at ? "@invited_at" : "SYSDATETIME()"}, SYSDATETIME())
     `);
 
   const record = result.recordset[0];
   return {
     baby_id: record.baby_id,
     user_id: record.user_id,
-    access_role: record.access_role as AccessRole,
+    access_role: record.access_role,
+    role_name: "", // Intentionally empty: this runs inside a transaction so we cannot JOIN roles. Callers (baby creation, invite acceptance) don't display role_name from this return value.
     can_edit_health: record.can_edit_health,
     can_edit_activities: record.can_edit_activities,
     can_share: record.can_share,
@@ -177,7 +220,7 @@ export async function updateCaregiverAccess(
   userId: number,
   babyId: number,
   updates: Partial<{
-    access_role: AccessRole;
+    access_role: number;
     can_edit_health: boolean;
     can_edit_activities: boolean;
     can_share: boolean;
@@ -193,7 +236,7 @@ export async function updateCaregiverAccess(
 
   if (updates.access_role !== undefined) {
     setClauses.push("access_role = @access_role");
-    request.input("access_role", sql.VarChar(30), updates.access_role);
+    request.input("access_role", sql.Int, updates.access_role);
   }
   if (updates.can_edit_health !== undefined) {
     setClauses.push("can_edit_health = @can_edit_health");
@@ -223,17 +266,8 @@ export async function updateCaregiverAccess(
     return null;
   }
 
-  const record = result.recordset[0];
-  return {
-    baby_id: record.baby_id,
-    user_id: record.user_id,
-    access_role: record.access_role as AccessRole,
-    can_edit_health: record.can_edit_health,
-    can_edit_activities: record.can_edit_activities,
-    can_share: record.can_share,
-    invited_at: record.invited_at,
-    accepted_at: record.accepted_at,
-  };
+  // Re-fetch to get role_name via JOIN
+  return getUserBabyAccess(userId, babyId);
 }
 
 /**
@@ -247,14 +281,15 @@ export async function removeCaregiverAccess(
 
   // Guard: prevent removing the sole PRIMARY_CAREGIVER
   const access = await getUserBabyAccess(userId, babyId);
-  if (access?.access_role === AccessRole.PRIMARY_CAREGIVER) {
+  if (access?.access_role === ROLE_PRIMARY) {
     const countResult = await db
       .request()
       .input("baby_id", sql.BigInt, babyId)
+      .input("role_primary", sql.Int, ROLE_PRIMARY)
       .query(`
         SELECT COUNT(*) as count
         FROM caregiver_baby_access
-        WHERE baby_id = @baby_id AND access_role = 'PRIMARY_CAREGIVER'
+        WHERE baby_id = @baby_id AND access_role = @role_primary
       `);
 
     if (countResult.recordset[0].count <= 1) {

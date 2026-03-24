@@ -69,3 +69,16 @@ export async function growthBelongsToBaby(
 ): Promise<boolean> {
   return await growthModel.growthBelongsToBaby(growthId, babyId);
 }
+
+/**
+ * Assert growth record belongs to baby, throw if not
+ */
+export async function assertGrowthBelongsToBaby(
+  growthId: number,
+  babyId: number
+): Promise<void> {
+  const belongs = await growthModel.growthBelongsToBaby(growthId, babyId);
+  if (!belongs) {
+    throw new Error("Growth record not found");
+  }
+}
