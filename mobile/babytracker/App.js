@@ -1,6 +1,7 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 
 // Show notifications even when the app is in the foreground
@@ -37,59 +38,61 @@ const linking = {
 
 export default function App() {
   return (
-    <NavigationContainer linking={linking}>
-      <Stack.Navigator initialRouteName="Landing">
-        <Stack.Screen
-          name="Landing"
-          component={Landing}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Login"
-          component={Login}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="SignUp"
-          component={Register}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Children"
-          component={Children}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Profile"
-          component={ProfileScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="History"
-          component={HistoryScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Schedule"
-          component={ScheduleScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="AddChild"
-          component={AddChildScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="BabyDetail"
-          component={BabyDetailScreen}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="AcceptInvitation"
-          component={AcceptInvitationScreen}
-          options={{ headerShown: false }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <SafeAreaProvider>
+      <NavigationContainer linking={linking}>
+        <Stack.Navigator initialRouteName="Landing">
+          <Stack.Screen
+            name="Landing"
+            component={Landing}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Login"
+            component={Login}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="SignUp"
+            component={Register}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Children"
+            component={Children}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Profile"
+            component={ProfileScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="History"
+            component={HistoryScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Schedule"
+            component={ScheduleScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="AddChild"
+            component={AddChildScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="BabyDetail"
+            component={BabyDetailScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="AcceptInvitation"
+            component={AcceptInvitationScreen}
+            options={{ headerShown: false }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }

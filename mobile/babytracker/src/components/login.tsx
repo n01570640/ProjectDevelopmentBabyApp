@@ -17,9 +17,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loginUser } from "../../services/authService";
 import { registerForPushNotifications } from "../../services/notificationService";
 import { acceptInvitation } from "../../services/invitationService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors, gradients } from '../theme/colors';
-import ModalWrapper from './shared/ModalWrapper';
 
 const { width, height } = Dimensions.get("window");
 
@@ -29,6 +29,7 @@ type Props = {
 };
 
 export default function Login({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const inviteEmail = route?.params?.inviteEmail ?? "";
   const [email, setEmail] = useState(inviteEmail);
   const [password, setPassword] = useState("");
@@ -36,7 +37,6 @@ export default function Login({ navigation, route }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [inviteModal, setInviteModal] = useState<{ title: string; message: string } | null>(null);
 
   // Validate email format
   const isValidEmail = (emailValue: string): boolean => {
@@ -82,7 +82,7 @@ export default function Login({ navigation, route }: Props) {
         }
 
         // Accept pending invitation only if user came through invite flow
-        let showedInviteModal = false;
+        let inviteMessage: { type: "success" | "error"; message: string } | undefined;
         if (inviteEmail) {
           try {
             const pendingToken = await AsyncStorage.getItem("pendingInviteToken");
@@ -92,11 +92,9 @@ export default function Login({ navigation, route }: Props) {
               await AsyncStorage.removeItem("pendingInviteBabyName");
               const acceptRes = await acceptInvitation(pendingToken);
               if (acceptRes?.success) {
-                setInviteModal({ title: "Invitation Accepted", message: `You now have access to ${babyName}'s profile!` });
-                showedInviteModal = true;
+                inviteMessage = { type: "success", message: `You now have access to ${babyName}'s profile!` };
               } else {
-                setInviteModal({ title: "Invitation", message: acceptRes?.message ?? "Could not accept invitation. It may have expired." });
-                showedInviteModal = true;
+                inviteMessage = { type: "error", message: acceptRes?.message ?? "Could not accept invitation. It may have expired." };
               }
             }
           } catch (e) {
@@ -104,10 +102,7 @@ export default function Login({ navigation, route }: Props) {
           }
         }
 
-        // Navigate now, or wait for user to dismiss the invite modal
-        if (!showedInviteModal) {
-          navigation.replace("Children");
-        }
+        navigation.replace("Children", inviteMessage ? { inviteMessage } : undefined);
       } else {
         // Show error from backend
         if (response.errors && Array.isArray(response.errors)) {
@@ -144,7 +139,7 @@ export default function Login({ navigation, route }: Props) {
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + verticalScale(20) }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -302,28 +297,6 @@ export default function Login({ navigation, route }: Props) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Invite result modal */}
-      <ModalWrapper
-        visible={!!inviteModal}
-        onClose={() => {
-          setInviteModal(null);
-          navigation.replace("Children");
-        }}
-        title={inviteModal?.title}
-      >
-        <Text style={styles.modalMessage}>{inviteModal?.message}</Text>
-        <View style={styles.modalActions}>
-          <TouchableOpacity
-            onPress={() => {
-              setInviteModal(null);
-              navigation.replace("Children");
-            }}
-            style={styles.modalButton}
-          >
-            <Text style={styles.modalButtonText}>OK</Text>
-          </TouchableOpacity>
-        </View>
-      </ModalWrapper>
     </LinearGradient>
   );
 }
@@ -342,7 +315,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: width * 0.08,
-    paddingTop: verticalScale(80),
     paddingBottom: verticalScale(40),
   },
   header: {
@@ -521,26 +493,5 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
-  },
-  modalMessage: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  modalActions: {
-    flexDirection: "row" as const,
-    justifyContent: "flex-end" as const,
-  },
-  modalButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
-  },
-  modalButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "500" as const,
   },
 });

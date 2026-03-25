@@ -9,11 +9,11 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getInvitationByToken } from '../../services/invitationService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scale, verticalScale, moderateScale } from '../utils/responsive';
 import { colors, gradients } from '../theme/colors';
 import ModalWrapper from './shared/ModalWrapper';
@@ -25,11 +25,13 @@ type Props = {
 };
 
 export default function Landing({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
   const [inviteDetails, setInviteDetails] = useState<any>(null);
   const [inviteToken, setInviteToken] = useState('');
   const [loadingInvite, setLoadingInvite] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const extractToken = (input: string): string | null => {
     const trimmed = input.trim();
@@ -40,9 +42,10 @@ export default function Landing({ navigation }: Props) {
   };
 
   const handleLookupInvite = async () => {
+    setFeedback(null);
     const token = extractToken(inviteLink);
     if (!token) {
-      Alert.alert('Invalid Link', 'Please paste a valid invitation link or token');
+      setFeedback({ type: "error", message: "Please paste a valid invitation link or token" });
       return;
     }
     setLoadingInvite(true);
@@ -50,16 +53,16 @@ export default function Landing({ navigation }: Props) {
       const res = await getInvitationByToken(token);
       if (res?.success && res.data) {
         if (res.data.is_expired) {
-          Alert.alert('Expired', 'This invitation has expired');
+          setFeedback({ type: "error", message: "This invitation has expired" });
           return;
         }
         setInviteToken(token);
         setInviteDetails(res.data);
       } else {
-        Alert.alert('Not Found', res?.message ?? 'Invitation not found');
+        setFeedback({ type: "error", message: res?.message ?? "Invitation not found" });
       }
     } catch {
-      Alert.alert('Error', 'Failed to look up invitation');
+      setFeedback({ type: "error", message: "Failed to look up invitation" });
     } finally {
       setLoadingInvite(false);
     }
@@ -83,7 +86,7 @@ export default function Landing({ navigation }: Props) {
       style={styles.container}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + verticalScale(20) }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Baby illustration */}
@@ -158,7 +161,7 @@ export default function Landing({ navigation }: Props) {
 
         {/* Invitation link */}
         <TouchableOpacity
-          onPress={() => setShowInviteModal(true)}
+          onPress={() => { setFeedback(null); setShowInviteModal(true); }}
           activeOpacity={0.7}
           style={styles.inviteLinkContainer}
         >
@@ -193,11 +196,18 @@ export default function Landing({ navigation }: Props) {
       {/* Invitation Modal */}
       <ModalWrapper
         visible={showInviteModal}
-        onClose={() => { setShowInviteModal(false); setInviteDetails(null); setInviteLink(''); }}
+        onClose={() => { setShowInviteModal(false); setInviteDetails(null); setInviteLink(''); setFeedback(null); }}
         title={!inviteDetails ? 'Accept Invitation' : "You're Invited!"}
       >
             {!inviteDetails ? (
               <>
+                {feedback && (
+                  <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                    <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                      {feedback.message}
+                    </Text>
+                  </View>
+                )}
                 <Text style={styles.modalSubtext}>
                   Paste the invitation link you received
                 </Text>
@@ -280,7 +290,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: width * 0.05,
-    paddingTop: verticalScale(65),
     paddingBottom: verticalScale(32),
     alignItems: 'center',
   },
@@ -472,5 +481,33 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexShrink: 1,
     textAlign: 'right',
+  },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
   },
 });

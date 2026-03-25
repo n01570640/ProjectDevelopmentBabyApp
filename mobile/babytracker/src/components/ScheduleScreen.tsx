@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, Alert, ActivityIndicator, Dimensions, Platform,
+  Modal, TextInput, ActivityIndicator, Dimensions, Platform,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Calendar } from "react-native-calendars";
@@ -13,6 +13,7 @@ import {
   createActivity, createTask, createReminder,
 } from "../../services/scheduleService";
 import { getBabies } from "../../services/babyService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from '../theme/colors';
 
@@ -50,6 +51,7 @@ const activityLabel = (type: string) =>
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function ScheduleScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const today = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate]   = useState(today);
   const [events, setEvents]               = useState<ScheduleEvent[]>([]);
@@ -57,6 +59,9 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [loading, setLoading]             = useState(false);
   const [babies, setBabies]               = useState<any[]>([]);
   const [selectedBaby, setSelectedBaby]   = useState<any>(null);
+
+  // Feedback banner state
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Modal state
   const [modalVisible, setModalVisible]   = useState(false);
@@ -153,7 +158,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   // Open modal
   const openModal = (type: EventType) => {
     if (!babies.length) {
-      Alert.alert("No Babies", "Add a baby from Profile first.");
+      setFeedback({ type: "error", message: "No babies found. Add a baby from Profile first." });
       return;
     }
     const base = new Date(`${selectedDate}T09:00:00`);
@@ -165,8 +170,9 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   // Save event
   const handleSave = async () => {
-    if (!modalBaby) { Alert.alert("Select a Baby", "Please select a baby first."); return; }
-    if (!form.title.trim() && modalType !== "activity") { Alert.alert("Validation", "Title is required."); return; }
+    setFeedback(null);
+    if (!modalBaby) { setFeedback({ type: "error", message: "Please select a baby first." }); return; }
+    if (!form.title.trim() && modalType !== "activity") { setFeedback({ type: "error", message: "Title is required." }); return; }
     setSaving(true);
     try {
       const babyId = modalBaby.baby_id;
@@ -194,7 +200,7 @@ export default function ScheduleScreen({ navigation }: Props) {
       if (selectedBaby?.baby_id === babyId) await loadEvents();
       else setSelectedBaby(modalBaby);
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Failed to save.");
+      setFeedback({ type: "error", message: e?.message ?? "Failed to save." });
     } finally { setSaving(false); }
   };
 
@@ -202,7 +208,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <LinearGradient colors={["#c9e8f9", "#e8f4fd"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
+      <LinearGradient colors={["#c9e8f9", "#e8f4fd"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Text style={styles.headerTitle}>Schedule</Text>
         {babies.length > 1 && (
           <>
@@ -239,6 +245,14 @@ export default function ScheduleScreen({ navigation }: Props) {
           </View>
         ))}
       </View>
+
+      {feedback && !modalVisible && (
+        <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+          <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+            {feedback.message}
+          </Text>
+        </View>
+      )}
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         {/* Calendar */}
@@ -313,8 +327,9 @@ export default function ScheduleScreen({ navigation }: Props) {
         selectedDate={selectedDate}
         babies={babies}
         modalBaby={modalBaby}
+        feedback={modalVisible ? feedback : null}
         onSelectBaby={b => setModalBaby(b)}
-        onClose={() => setModalVisible(false)}
+        onClose={() => { setModalVisible(false); setFeedback(null); }}
         onSave={handleSave}
         onChange={(key, val) => setForm(f => ({ ...f, [key]: val }))}
         onChangeDate={(key, date) => setForm(f => ({ ...f, [key]: date }))}
@@ -364,6 +379,7 @@ function EventCard({ event }: { event: ScheduleEvent }) {
 interface ModalProps {
   visible: boolean; type: EventType; form: any; saving: boolean;
   selectedDate: string; babies: any[]; modalBaby: any;
+  feedback: { type: "success" | "error"; message: string } | null;
   onSelectBaby: (b: any) => void; onClose: () => void; onSave: () => void;
   onChange: (key: string, val: string) => void;
   onChangeDate: (key: string, date: Date | null) => void;
@@ -371,7 +387,7 @@ interface ModalProps {
 }
 
 function AddEventModal({
-  visible, type, form, saving, selectedDate, babies, modalBaby,
+  visible, type, form, saving, selectedDate, babies, modalBaby, feedback,
   onSelectBaby, onClose, onSave, onChange, onChangeDate, onOpenPicker,
 }: ModalProps) {
   const c = COLORS[type];
@@ -408,6 +424,13 @@ function AddEventModal({
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled">
+            {feedback && (
+              <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                  {feedback.message}
+                </Text>
+              </View>
+            )}
             <Text style={styles.modalDate}>
               📅{"  "}{new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
             </Text>
@@ -565,7 +588,6 @@ function AddEventModal({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f7f9fc" },
   header: {
-    paddingTop: Platform.OS === "android" ? verticalScale(40) : verticalScale(54),
     paddingBottom: verticalScale(14), paddingHorizontal: scale(20),
   },
   headerTitle: { fontSize: moderateScale(26), fontWeight: "800", color: "#1a3d5c", marginBottom: verticalScale(6) },
@@ -637,5 +659,33 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: "#6d8eb0", fontWeight: "600", fontSize: moderateScale(14) },
   saveBtn: { paddingHorizontal: scale(22), paddingVertical: verticalScale(10), borderRadius: 10, minWidth: scale(80), alignItems: "center" },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: moderateScale(14) },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
+  },
 });
 

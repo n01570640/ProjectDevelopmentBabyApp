@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import NavBar from "./navBar";
 import { getBabies } from "../../services/babyService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -20,6 +21,7 @@ const { width } = Dimensions.get("window");
 
 type Props = {
   navigation: any;
+  route?: any;
 };
 
 // NEW: Type matching API response (BabyWithDetailsDTO)
@@ -74,11 +76,24 @@ const formatBirthDate = (dateString: string): string => {
 // Placeholder image for babies without photos
 const placeholderImage = require("../images/children/charlie.jpg");
 
-export default function Children({ navigation }: Props) {
+export default function Children({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   // State for API data
   const [babies, setBabies] = useState<BabyProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Show invite result banner if navigated from login with invite flow
+  useEffect(() => {
+    const inviteMessage = route?.params?.inviteMessage;
+    if (inviteMessage) {
+      setFeedback(inviteMessage);
+      setTimeout(() => setFeedback(null), 3000);
+      // Clear the param so it doesn't re-trigger on focus
+      navigation.setParams({ inviteMessage: undefined });
+    }
+  }, [route?.params?.inviteMessage]);
 
   // Fetch babies on mount and whenever the screen comes into focus
   useEffect(() => {
@@ -111,7 +126,7 @@ export default function Children({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.inner}>
+      <View style={[styles.inner, { paddingTop: insets.top + verticalScale(10) }]}>
         {/* Search row */}
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
@@ -131,6 +146,15 @@ export default function Children({ navigation }: Props) {
             />
           </TouchableOpacity>
         </View>
+
+        {/* Inline feedback banner (e.g., invite accepted) */}
+        {feedback && (
+          <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+            <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+              {feedback.message}
+            </Text>
+          </View>
+        )}
 
         {/* Loading state */}
         {loading && (
@@ -294,7 +318,6 @@ const styles = StyleSheet.create({
   },
   inner: {
     flex: 1,
-    paddingTop: verticalScale(40),
     paddingHorizontal: width * 0.05,
     paddingBottom: verticalScale(110), // space above navbar
   },
@@ -498,5 +521,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 5,
+  },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(10),
+  },
+  feedbackSuccessText: {
+    fontSize: moderateScale(13),
+    fontWeight: "500" as const,
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: verticalScale(10),
+    marginBottom: verticalScale(10),
+  },
+  feedbackErrorText: {
+    fontSize: moderateScale(13),
+    fontWeight: "500" as const,
+    color: colors.errorDark,
   },
 });

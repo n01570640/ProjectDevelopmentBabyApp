@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   Dimensions,
   Platform,
@@ -15,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { getBaby, updateBaby, getLatestGrowth, recordGrowth } from "../../services/babyService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -59,6 +59,7 @@ type Props = { navigation: any; route: any };
 
 // ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
 export default function BabyDetailScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const { babyId } = route.params as { babyId: number };
 
   const [baby, setBaby] = useState<any>(null);
@@ -118,7 +119,7 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
         colors={isMale ? ["#c9e8f9", "#e8f4fd"] : ["#fce4ec", "#fdf0f5"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top + 10 }]}
       >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={moderateScale(22)} color="#1a3d5c" />
@@ -366,6 +367,7 @@ function EditBabyModal({
   const [bloodType, setBloodType] = useState<string | null>(baby?.blood_type ?? null);
   const [notes, setNotes] = useState(baby?.notes ?? "");
   const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Reset when baby changes
   useEffect(() => {
@@ -374,6 +376,7 @@ function EditBabyModal({
     setSex(baby?.sex ?? null);
     setBloodType(baby?.blood_type ?? null);
     setNotes(baby?.notes ?? "");
+    setFeedback(null);
   }, [baby, visible]);
 
   const handleDobChange = (text: string) => {
@@ -385,12 +388,13 @@ function EditBabyModal({
   };
 
   const handleSave = async () => {
+    setFeedback(null);
     if (!name.trim()) {
-      Alert.alert("Validation", "Name is required.");
+      setFeedback({ type: "error", message: "Name is required." });
       return;
     }
     if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
-      Alert.alert("Validation", "Date must be YYYY-MM-DD.");
+      setFeedback({ type: "error", message: "Date must be YYYY-MM-DD." });
       return;
     }
     setSaving(true);
@@ -405,10 +409,10 @@ function EditBabyModal({
       if (res?.success || res?.data) {
         onSaved(res?.data ?? res);
       } else {
-        Alert.alert("Error", res?.message ?? "Update failed.");
+        setFeedback({ type: "error", message: res?.message ?? "Update failed." });
       }
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Something went wrong.");
+      setFeedback({ type: "error", message: e?.message ?? "Something went wrong." });
     } finally {
       setSaving(false);
     }
@@ -428,6 +432,13 @@ function EditBabyModal({
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
+            {feedback && (
+              <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                  {feedback.message}
+                </Text>
+              </View>
+            )}
             {/* Name */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Name <Text style={styles.required}>*</Text></Text>
@@ -563,16 +574,19 @@ function LogGrowthModal({
   const [headCm, setHeadCm] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     if (visible) {
       setWeightKg(""); setLengthCm(""); setHeadCm(""); setNotes("");
+      setFeedback(null);
     }
   }, [visible]);
 
   const handleSave = async () => {
+    setFeedback(null);
     if (!weightKg && !lengthCm && !headCm) {
-      Alert.alert("Validation", "Please enter at least one measurement.");
+      setFeedback({ type: "error", message: "Please enter at least one measurement." });
       return;
     }
     setSaving(true);
@@ -586,10 +600,10 @@ function LogGrowthModal({
       if (res?.success || res?.data) {
         onSaved();
       } else {
-        Alert.alert("Error", res?.message ?? "Failed to log growth.");
+        setFeedback({ type: "error", message: res?.message ?? "Failed to log growth." });
       }
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Something went wrong.");
+      setFeedback({ type: "error", message: e?.message ?? "Something went wrong." });
     } finally {
       setSaving(false);
     }
@@ -608,6 +622,13 @@ function LogGrowthModal({
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled">
+            {feedback && (
+              <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                  {feedback.message}
+                </Text>
+              </View>
+            )}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Weight (kg)</Text>
               <TextInput
@@ -707,7 +728,6 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    paddingTop: Platform.OS === "android" ? verticalScale(40) : verticalScale(54),
     paddingBottom: verticalScale(20),
     paddingHorizontal: scale(20),
     alignItems: "center",
@@ -937,5 +957,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: moderateScale(14) },
+
+  // Feedback banners
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
+  },
 });
 

@@ -165,11 +165,19 @@ export async function cancelInvitation(
 ): Promise<void> {
   const invitation = await invitationModel.findInvitationById(inviteId);
 
-  if (!invitation || invitation.baby_id !== babyId) {
+  // Debug log — remove after confirming fix
+  console.log("cancelInvitation debug:", {
+    inviteId, babyId, userId,
+    found: !!invitation,
+    dbBabyId: invitation?.baby_id, dbBabyIdType: typeof invitation?.baby_id,
+    dbInviterId: invitation?.inviter_user_id, dbInviterType: typeof invitation?.inviter_user_id,
+  });
+
+  if (!invitation || Number(invitation.baby_id) !== Number(babyId)) {
     throw new Error("Invitation not found");
   }
 
-  if (invitation.inviter_user_id !== userId) {
+  if (Number(invitation.inviter_user_id) !== Number(userId)) {
     throw new Error("Only the inviter can cancel this invitation");
   }
 

@@ -5,13 +5,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   getInvitationByToken,
   acceptInvitation,
 } from "../../services/invitationService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from '../theme/colors';
 
 interface InvitationDetails {
@@ -23,11 +23,13 @@ interface InvitationDetails {
 }
 
 export default function AcceptInvitationScreen({ route, navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { token } = route.params ?? {};
   const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -60,17 +62,13 @@ export default function AcceptInvitationScreen({ route, navigation }: any) {
     try {
       const res = await acceptInvitation(token);
       if (res?.success) {
-        Alert.alert("Welcome!", `You now have access to ${invitation?.baby_name}`, [
-          {
-            text: "OK",
-            onPress: () => navigation.navigate("Children"),
-          },
-        ]);
+        setFeedback({ type: "success", message: `Welcome! You now have access to ${invitation?.baby_name}'s profile!` });
+        setTimeout(() => navigation.replace("Children"), 2000);
       } else {
-        Alert.alert("Error", res?.message ?? "Failed to accept invitation");
+        setFeedback({ type: "error", message: res?.message ?? "Failed to accept invitation" });
       }
     } catch {
-      Alert.alert("Error", "Failed to accept invitation");
+      setFeedback({ type: "error", message: "Failed to accept invitation" });
     } finally {
       setAccepting(false);
     }
@@ -82,7 +80,7 @@ export default function AcceptInvitationScreen({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading invitation...</Text>
       </View>
@@ -91,7 +89,7 @@ export default function AcceptInvitationScreen({ route, navigation }: any) {
 
   if (error && !invitation) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <Ionicons name="alert-circle-outline" size={52} color={colors.error} />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.backButton} onPress={handleDecline}>
@@ -102,8 +100,15 @@ export default function AcceptInvitationScreen({ route, navigation }: any) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.card}>
+        {feedback && (
+          <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+            <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+              {feedback.message}
+            </Text>
+          </View>
+        )}
         <Ionicons name="mail-open-outline" size={48} color={colors.primary} />
         <Text style={styles.title}>You're Invited!</Text>
 
@@ -258,5 +263,33 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
   },
 });

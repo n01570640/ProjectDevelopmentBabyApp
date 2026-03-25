@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { registerUser } from "../../services/authService";
 import { registerForPushNotifications } from "../../services/notificationService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors, gradients } from '../theme/colors';
 
@@ -26,6 +27,7 @@ type Props = {
 };
 
 export default function SignUp({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const inviteEmail = route?.params?.inviteEmail ?? "";
   const inviteToken = route?.params?.inviteToken ?? "";
   const [formData, setFormData] = useState({
@@ -152,7 +154,7 @@ export default function SignUp({ navigation, route }: Props) {
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + verticalScale(20) }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -403,7 +405,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: width * 0.08,
-    paddingTop: verticalScale(60),
     paddingBottom: verticalScale(80),
   },
   header: {

@@ -7,6 +7,7 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Baby, HistoryItem } from "../types/baby.types";
 
 interface HistoryScreenProps {
@@ -22,6 +23,7 @@ export default function HistoryScreen({
   route,
   navigation,
 }: HistoryScreenProps) {
+  const insets = useSafeAreaInsets();
   const { baby } = route.params;
 
   // Demo history data
@@ -86,7 +88,7 @@ export default function HistoryScreen({
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backButton}
@@ -123,7 +125,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: "#fff",
     padding: 20,
-    paddingTop: 60,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
