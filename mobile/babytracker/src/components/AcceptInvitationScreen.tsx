@@ -63,7 +63,7 @@ export default function AcceptInvitationScreen({ route, navigation }: any) {
       const res = await acceptInvitation(token);
       if (res?.success) {
         setFeedback({ type: "success", message: `Welcome! You now have access to ${invitation?.baby_name}'s profile!` });
-        setTimeout(() => navigation.replace("Children"), 2000);
+        setTimeout(() => navigation.replace("MainTabs"), 2000);
       } else {
         setFeedback({ type: "error", message: res?.message ?? "Failed to accept invitation" });
       }

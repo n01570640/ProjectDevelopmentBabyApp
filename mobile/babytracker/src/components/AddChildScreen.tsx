@@ -13,6 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { createBaby } from "../../services/babyService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -25,6 +27,7 @@ type SexOption = "male" | "female" | null;
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 export default function AddChildScreen({ navigation }: Props) {
+  const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -78,6 +81,7 @@ export default function AddChildScreen({ navigation }: Props) {
       });
 
       if (response.success) {
+        dispatch(fetchBabies());
         setFeedback({ type: "success", message: "Baby added successfully!" });
         setTimeout(() => navigation.goBack(), 2000);
       } else {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -21,8 +21,8 @@ if (Platform.OS === "android") {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Baby } from "../types/baby.types";
-import NavBar from "./navBar";
-import { getBabies } from "../../services/babyService";
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
 import { createInvitation, getInvitations, cancelInvitation } from "../../services/invitationService";
 import { getCaregivers, removeCaregiver } from "../../services/caregiverService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -420,43 +420,25 @@ export default function ProfileScreen({ navigation }: any) {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [babyImages, setBabyImages] = useState<{ [key: number]: string }>({});
 
-  // ── Live API data
-  const [babies, setBabies] = useState<Baby[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ── Redux store data
+  const dispatch = useAppDispatch();
+  const { items: rawBabies, loading } = useAppSelector(state => state.babies);
 
-  const fetchBabies = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getBabies();
-      if (res?.success && Array.isArray(res.data)) {
-        // Map BabyWithDetailsDTO → Baby (local type)
-        const mapped: Baby[] = res.data.map((b: any) => ({
-          id: b.baby_id,
-          name: b.display_name,
-          dob: b.date_of_birth?.slice(0, 10) ?? "",
-          sex: b.sex === "male" ? "M" : b.sex === "female" ? "F" : b.sex ?? "—",
-          role: b.access_role === "PRIMARY_CAREGIVER" ? "PRIMARY" : "SECONDARY",
-          canShare: b.can_share ?? false,
-        }));
-        setBabies(mapped);
-      }
-    } catch (e) {
-      console.error("ProfileScreen: failed to fetch babies", e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const babies: Baby[] = useMemo(() =>
+    rawBabies.map((b: any) => ({
+      id: b.baby_id,
+      name: b.display_name,
+      dob: b.date_of_birth?.slice(0, 10) ?? "",
+      sex: b.sex === "male" ? "M" : b.sex === "female" ? "F" : b.sex ?? "—",
+      role: b.access_role === "PRIMARY_CAREGIVER" ? "PRIMARY" : "SECONDARY",
+      canShare: b.can_share ?? false,
+    })),
+    [rawBabies]
+  );
 
-  // Fetch on mount
   useEffect(() => {
-    fetchBabies();
-  }, [fetchBabies]);
-
-  // Re-fetch whenever this screen comes into focus (e.g. after AddChild)
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", fetchBabies);
-    return unsubscribe;
-  }, [navigation, fetchBabies]);
+    dispatch(fetchBabies());
+  }, [dispatch]);
 
   const handleViewHistory = (baby: Baby) => {
     setSelectedBaby(baby);
@@ -669,7 +651,6 @@ export default function ProfileScreen({ navigation }: any) {
         onChooseFromLibrary={handleChooseFromLibrary}
       />
 
-      <NavBar navigation={navigation} activeTab="profile" />
     </View>
   );
 }

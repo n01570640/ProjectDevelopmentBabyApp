@@ -8,6 +8,8 @@ React Native mobile application for tracking baby activities and health built wi
 - Expo 54.0.23
 - React 19.1.0
 - TypeScript (components) / JavaScript (services)
+- Redux Toolkit + React Redux (centralized state management)
+- React Navigation (Bottom Tabs + Native Stack)
 
 ## Project Structure
 
@@ -26,20 +28,37 @@ babytracker/
 │   ├── guidelineService.js      # Vaccine guidelines (CDC schedule)
 │   └── userService.js           # Legacy (unused)
 ├── src/
-│   ├── components/              # Screen components (9 screens + navbar)
-│   │   ├── landing.tsx          # Welcome page
-│   │   ├── login.tsx            # Email/password login
+│   ├── components/              # Screen components (10 screens + custom tab bar)
+│   │   ├── landing.tsx          # Welcome page + invitation lookup modal
+│   │   ├── login.tsx            # Email/password login + invite acceptance
 │   │   ├── register.tsx         # User registration
 │   │   ├── children.tsx         # Baby list dashboard
 │   │   ├── BabyDetailScreen.tsx # Individual baby profile + growth
 │   │   ├── AddChildScreen.tsx   # Create new baby form
 │   │   ├── ScheduleScreen.tsx   # Calendar with activities/tasks/reminders
-│   │   ├── ProfileScreen.tsx    # User profile, caregiver management
+│   │   ├── ProfileScreen.tsx    # User profile, caregiver management, sharing
 │   │   ├── HistoryScreen.tsx    # Activity timeline
-│   │   └── navBar.tsx           # Reusable bottom navigation bar
+│   │   ├── AcceptInvitationScreen.tsx # Deep link invitation acceptance
+│   │   ├── navBar.tsx           # Custom bottom tab bar (used by Tab Navigator)
+│   │   └── shared/
+│   │       └── ModalWrapper.tsx # Reusable modal component
+│   ├── store/                   # Redux Toolkit store
+│   │   ├── index.ts             # Store configuration
+│   │   ├── hooks.ts             # Typed useAppSelector / useAppDispatch
+│   │   └── slices/
+│   │       ├── babiesSlice.ts   # Babies list state + async thunk
+│   │       ├── activitiesSlice.ts # Activities state + async thunk
+│   │       ├── tasksSlice.ts    # Tasks state + async thunk
+│   │       └── remindersSlice.ts # Reminders state + async thunk
+│   ├── theme/
+│   │   └── colors.ts            # Shared color tokens
+│   ├── types/
+│   │   └── baby.types.ts        # TypeScript interfaces
+│   ├── utils/
+│   │   └── responsive.ts        # Responsive scaling helpers
 │   ├── fonts/                   # Custom fonts (Quicksand, Raleway)
 │   └── images/                  # App images and icons
-├── App.js                       # Root component - NativeStackNavigator (9 screens)
+├── App.js                       # Root: Stack Navigator (auth) + Tab Navigator (main app)
 ├── index.js                     # Entry point
 ├── app.json                     # Expo config
 ├── package.json
@@ -77,6 +96,54 @@ npx expo run:android
 ```
 
 Note: Push notifications require the development build. Expo Go dropped push support in SDK 53.
+
+## Architecture
+
+### Navigation Structure
+
+The app uses a **Tab Navigator** nested inside a **Stack Navigator**:
+
+```
+Root Stack (auth screens)
+├── Landing
+├── Login
+├── SignUp
+├── MainTabs (Bottom Tab Navigator — screens stay mounted)
+│   ├── ChildrenTab (Stack) → Children → BabyDetail, AddChild
+│   ├── ScheduleTab (Stack) → Schedule
+│   └── ProfileTab (Stack) → Profile → History, BabyDetail, AddChild
+└── AcceptInvitation (deep link)
+```
+
+Tab screens stay mounted in memory — switching tabs is instant with no remounting or data refetch.
+
+### State Management (Redux Toolkit)
+
+Shared data lives in the Redux store (`src/store/`). Screens read from the store via `useAppSelector` and dispatch actions via `useAppDispatch`.
+
+| Slice | Data | Used By |
+|-------|------|---------|
+| `babiesSlice` | Baby list (all babies user has access to) | Children, Profile, Schedule, AddChild |
+| `activitiesSlice` | Activities for selected baby | Schedule |
+| `tasksSlice` | Tasks for selected baby | Schedule |
+| `remindersSlice` | Reminders for selected baby | Schedule |
+
+**To add a new slice** (e.g., medications):
+1. Create `src/store/slices/medicationsSlice.ts` following the existing pattern
+2. Register the reducer in `src/store/index.ts`
+3. Use in screens: `useAppSelector(state => state.medications)` + `dispatch(fetchMedications(babyId))`
+
+### SafeArea Handling
+
+All screens use `useSafeAreaInsets()` from `react-native-safe-area-context` for dynamic top padding. `SafeAreaProvider` wraps the app in `App.js`. The custom tab bar handles bottom insets.
+
+### Inline Feedback Pattern
+
+All error/success messages display as inline banners (not Alert.alert popups). Pattern:
+- Green left-border accent bar for success (`colors.successLight`)
+- Red left-border accent bar for errors (`colors.errorLight`)
+- Auto-dismiss after 2-3 seconds for success messages
+- Only system permission prompts (camera, photo library) use native Alert
 
 ## Services
 

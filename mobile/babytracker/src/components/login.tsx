@@ -102,7 +102,7 @@ export default function Login({ navigation, route }: Props) {
           }
         }
 
-        navigation.replace("Children", inviteMessage ? { inviteMessage } : undefined);
+        navigation.replace("MainTabs", inviteMessage ? { inviteMessage } : undefined);
       } else {
         // Show error from backend
         if (response.errors && Array.isArray(response.errors)) {

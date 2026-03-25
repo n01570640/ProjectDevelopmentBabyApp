@@ -11,47 +11,34 @@ import { LinearGradient } from "expo-linear-gradient";
 import { scale, moderateScale } from "../utils/responsive";
 import { colors } from '../theme/colors';
 
-type TabKey = "home" | "tasks" | "schedule" | "stats" | "children" | "profile";
-
-type Props = {
-  navigation: any;
-  activeTab: TabKey;
+type TabConfig = {
+  routeName: string;
+  icon: string;
+  label: string;
 };
 
-export default function NavBar({ navigation, activeTab }: Props) {
-  const insets = useSafeAreaInsets(); //account for andriod systems bar
-  const handlePress = (tab: TabKey) => {
-    switch (tab) {
-      case "home":
-        navigation.navigate("Children");
-        break;
-      case "tasks":
-        navigation.navigate("Children");
-        break;
-      case "schedule":
-        navigation.navigate("Schedule");
-        break;
-      case "stats":
-        navigation.navigate("Children");
-        break;
-      case "children":
-        navigation.navigate("Children");
-        break;
-      case "profile":
-        navigation.navigate("Profile");
-        break;
-      default:
-        break;
-    }
+const TABS: TabConfig[] = [
+  { routeName: "", icon: "home-outline", label: "Home" }, // TODO: add HomeTab route when analytics/dashboard screen is built
+  { routeName: "ChildrenTab", icon: "people-outline", label: "Babies" },
+  { routeName: "ScheduleTab", icon: "calendar-outline", label: "Schedule" },
+  { routeName: "ProfileTab", icon: "person-circle-outline", label: "Profile" },
+];
+
+export default function CustomTabBar({ state, navigation }: any) {
+  const insets = useSafeAreaInsets();
+  const activeRouteName = state.routeNames[state.index];
+
+  const handlePress = (routeName: string) => {
+    if (routeName) navigation.navigate(routeName);
   };
 
-  const renderTab = (tab: TabKey, iconName: any, label: string) => {
-    const isActive = activeTab === tab;
+  const renderTab = (tab: TabConfig, index: number) => {
+    const isActive = tab.routeName !== "" && activeRouteName === tab.routeName;
 
     return (
       <TouchableOpacity
-        key={tab}
-        onPress={() => handlePress(tab)}
+        key={`tab-${index}`}
+        onPress={() => handlePress(tab.routeName)}
         activeOpacity={0.85}
         style={[
           styles.tabButton,
@@ -60,11 +47,11 @@ export default function NavBar({ navigation, activeTab }: Props) {
         ]}
       >
         <Ionicons
-          name={iconName}
+          name={tab.icon as any}
           size={moderateScale(20)}
           color={isActive ? "#ffffff" : "#444444"}
         />
-        {isActive && <Text style={styles.tabLabel}>{label}</Text>}
+        {isActive && <Text style={styles.tabLabel}>{tab.label}</Text>}
       </TouchableOpacity>
     );
   };
@@ -74,13 +61,10 @@ export default function NavBar({ navigation, activeTab }: Props) {
       colors={["#f2fcff", "#e7f3ff"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.navBackground , { height: NAV_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
+      style={[styles.navBackground, { height: NAV_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
     >
       <View style={styles.navInner}>
-        {renderTab("home", "home-outline", "Home")}
-        {renderTab("children", "people-outline", "Babies")}
-        {renderTab("schedule", "calendar-outline", "Schedule")}
-        {renderTab("profile", "person-circle-outline", "Profile")}
+        {TABS.map((tab, i) => renderTab(tab, i))}
       </View>
     </LinearGradient>
   );
@@ -110,7 +94,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 100, // canva-style round rect
+    borderRadius: 100,
     height: 46,
     paddingHorizontal: 18,
   },
@@ -119,10 +103,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   tabButtonInactive: {
-    backgroundColor: colors.inactive, // grey icon-only buttons
+    backgroundColor: colors.inactive,
   },
   tabButtonActive: {
-    backgroundColor: colors.primary, // blue popped-out pill
+    backgroundColor: colors.primary,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,

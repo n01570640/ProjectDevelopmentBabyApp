@@ -11,9 +11,9 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import NavBar from "./navBar";
-import { getBabies } from "../../services/babyService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -78,10 +78,8 @@ const placeholderImage = require("../images/children/charlie.jpg");
 
 export default function Children({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  // State for API data
-  const [babies, setBabies] = useState<BabyProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const dispatch = useAppDispatch();
+  const { items: babies, loading, error } = useAppSelector(state => state.babies);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Show invite result banner if navigated from login with invite flow
@@ -95,34 +93,9 @@ export default function Children({ navigation, route }: Props) {
     }
   }, [route?.params?.inviteMessage]);
 
-  // Fetch babies on mount and whenever the screen comes into focus
   useEffect(() => {
-    fetchBabies();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", fetchBabies);
-    return unsubscribe;
-  }, [navigation]);
-
-  const fetchBabies = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await getBabies();
-
-      if (response.success) {
-        setBabies(response.data || []);
-      } else {
-        setError(response.message || "Failed to load children");
-      }
-    } catch (err: any) {
-      console.error("Error fetching babies:", err);
-      setError("Failed to load children. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    dispatch(fetchBabies());
+  }, [dispatch]);
 
   return (
     <View style={styles.container}>
@@ -169,7 +142,7 @@ export default function Children({ navigation, route }: Props) {
           <View style={styles.centerContainer}>
             <Ionicons name="alert-circle-outline" size={48} color={colors.errorBorder} />
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={fetchBabies}>
+            <TouchableOpacity style={styles.retryButton} onPress={() => dispatch(fetchBabies())}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -303,8 +276,6 @@ export default function Children({ navigation, route }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Baked-in navbar */}
-      <NavBar navigation={navigation} activeTab="children" />
     </View>
   );
 }

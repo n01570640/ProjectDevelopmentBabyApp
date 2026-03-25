@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Modal, TextInput, ActivityIndicator, Dimensions, Platform,
@@ -7,13 +7,15 @@ import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/dat
 import { Calendar } from "react-native-calendars";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import NavBar from "./navBar";
 import {
-  getActivities, getTasks, getReminders,
   createActivity, createTask, createReminder,
 } from "../../services/scheduleService";
-import { getBabies } from "../../services/babyService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
+import { fetchActivities } from '../store/slices/activitiesSlice';
+import { fetchTasks } from '../store/slices/tasksSlice';
+import { fetchReminders } from '../store/slices/remindersSlice';
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from '../theme/colors';
 
@@ -54,11 +56,13 @@ export default function ScheduleScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const today = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate]   = useState(today);
-  const [events, setEvents]               = useState<ScheduleEvent[]>([]);
-  const [markedDates, setMarkedDates]     = useState<Record<string, MarkedDate>>({});
-  const [loading, setLoading]             = useState(false);
-  const [babies, setBabies]               = useState<any[]>([]);
+  const dispatch = useAppDispatch();
+  const { items: babies } = useAppSelector(state => state.babies);
+  const { items: activities } = useAppSelector(state => state.activities);
+  const { items: tasks } = useAppSelector(state => state.tasks);
+  const { items: reminders } = useAppSelector(state => state.reminders);
   const [selectedBaby, setSelectedBaby]   = useState<any>(null);
+  const [loading, setLoading]             = useState(false);
 
   // Feedback banner state
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -79,49 +83,52 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   // Load babies
   useEffect(() => {
-    (async () => {
-      const res = await getBabies();
-      const list = Array.isArray(res?.data) ? res.data : [];
-      setBabies(list);
-      if (list.length > 0) setSelectedBaby(list[0]);
-    })();
-  }, []);
+    dispatch(fetchBabies());
+  }, [dispatch]);
 
-  // Load events for selected baby
-  const loadEvents = useCallback(async () => {
+  useEffect(() => {
+    if (babies.length > 0 && !selectedBaby) setSelectedBaby(babies[0]);
+  }, [babies]);
+
+  // Load events for selected baby via Redux
+  const loadEvents = useCallback(() => {
     if (!selectedBaby) return;
-    setLoading(true);
-    try {
-      const babyId = selectedBaby.baby_id;
-      const [actRes, taskRes, remRes] = await Promise.all([
-        getActivities(babyId), getTasks(babyId), getReminders(babyId),
-      ]);
-      const mapped: ScheduleEvent[] = [];
-      (Array.isArray(actRes?.data) ? actRes.data : []).forEach((a: any) => {
-        const date = toDateStr(a.start_time);
-        if (date) mapped.push({ id: a.activity_id, type: "activity", title: activityLabel(a.activity_type), description: a.notes ?? undefined, date, time: toTimeStr(a.start_time), raw: a });
-      });
-      (Array.isArray(taskRes?.data) ? taskRes.data : []).forEach((t: any) => {
-        const date = toDateStr(t.due_at);
-        if (date) mapped.push({ id: t.task_id, type: "task", title: t.title, description: t.description ?? undefined, date, time: toTimeStr(t.due_at), raw: t });
-      });
-      (Array.isArray(remRes?.data) ? remRes.data : []).forEach((r: any) => {
-        const date = toDateStr(r.due_at);
-        if (date) mapped.push({ id: r.reminder_id, type: "reminder", title: r.title, description: r.body ?? undefined, date, time: toTimeStr(r.due_at), raw: r });
-      });
-      setEvents(mapped);
-      const result: Record<string, MarkedDate> = {};
-      mapped.forEach((ev) => {
-        if (!result[ev.date]) result[ev.date] = { dots: [], marked: true };
-        if (!result[ev.date].dots.some(d => d.key === ev.type))
-          result[ev.date].dots.push({ key: ev.type, color: COLORS[ev.type].dot });
-      });
-      setMarkedDates(result);
-    } catch (e) { console.error("Failed to load schedule:", e); }
-    finally { setLoading(false); }
-  }, [selectedBaby]);
+    const babyId = selectedBaby.baby_id;
+    dispatch(fetchActivities(babyId));
+    dispatch(fetchTasks(babyId));
+    dispatch(fetchReminders(babyId));
+  }, [selectedBaby, dispatch]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  // Derive events from store data
+  const events = useMemo(() => {
+    const mapped: ScheduleEvent[] = [];
+    (Array.isArray(activities) ? activities : []).forEach((a: any) => {
+      const date = toDateStr(a.start_time);
+      if (date) mapped.push({ id: a.activity_id, type: "activity", title: activityLabel(a.activity_type), description: a.notes ?? undefined, date, time: toTimeStr(a.start_time), raw: a });
+    });
+    (Array.isArray(tasks) ? tasks : []).forEach((t: any) => {
+      const date = toDateStr(t.due_at);
+      if (date) mapped.push({ id: t.task_id, type: "task", title: t.title, description: t.description ?? undefined, date, time: toTimeStr(t.due_at), raw: t });
+    });
+    (Array.isArray(reminders) ? reminders : []).forEach((r: any) => {
+      const date = toDateStr(r.due_at);
+      if (date) mapped.push({ id: r.reminder_id, type: "reminder", title: r.title, description: r.body ?? undefined, date, time: toTimeStr(r.due_at), raw: r });
+    });
+    return mapped;
+  }, [activities, tasks, reminders]);
+
+  // Derive marked dates from events
+  const markedDates = useMemo(() => {
+    const result: Record<string, MarkedDate> = {};
+    events.forEach((ev) => {
+      if (!result[ev.date]) result[ev.date] = { dots: [], marked: true };
+      if (!result[ev.date].dots.some(d => d.key === ev.type))
+        result[ev.date].dots.push({ key: ev.type, color: COLORS[ev.type].dot });
+    });
+    return result;
+  }, [events]);
 
   const dayEvents = events.filter(e => e.date === selectedDate).sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 
@@ -346,7 +353,6 @@ export default function ScheduleScreen({ navigation }: Props) {
         />
       )}
 
-      <NavBar navigation={navigation} activeTab="schedule" />
     </View>
   );
 }
