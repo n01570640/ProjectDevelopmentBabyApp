@@ -1,29 +1,31 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Modal, TextInput, Alert, ActivityIndicator, Dimensions, Platform,
+  Modal, TextInput, ActivityIndicator, Dimensions, Platform,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Calendar } from "react-native-calendars";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import NavBar from "./navBar";
 import {
-  getActivities, getTasks, getReminders,
   createActivity, createTask, createReminder,
 } from "../../services/scheduleService";
-import { getBabies } from "../../services/babyService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
+import { fetchActivities } from '../store/slices/activitiesSlice';
+import { fetchTasks } from '../store/slices/tasksSlice';
+import { fetchReminders } from '../store/slices/remindersSlice';
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors } from '../theme/colors';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const { width, height } = Dimensions.get("window");
-const scale = (s: number) => (width / 360) * s;
-const verticalScale = (s: number) => (height / 800) * s;
-const moderateScale = (s: number, f = 0.5) => s + (scale(s) - s) * f;
+const { height } = Dimensions.get("window");
 
 const COLORS = {
-  activity: { dot: "#4A90D9", badge: "#EAF3FB", text: "#1A5C96", icon: "flash-outline" },
-  task:     { dot: "#F5A623", badge: "#FEF5E7", text: "#9A6100", icon: "checkmark-circle-outline" },
-  reminder: { dot: "#7ED321", badge: "#EEF8E6", text: "#3E7A00", icon: "alarm-outline" },
+  activity: { dot: colors.activityDot, badge: colors.activityBadge, text: colors.activityText, icon: "flash-outline" },
+  task:     { dot: colors.taskDot, badge: colors.taskBadge, text: colors.taskText, icon: "checkmark-circle-outline" },
+  reminder: { dot: colors.reminderDot, badge: colors.reminderBadge, text: colors.reminderText, icon: "alarm-outline" },
 } as const;
 
 type EventType = "activity" | "task" | "reminder";
@@ -51,13 +53,19 @@ const activityLabel = (type: string) =>
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function ScheduleScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const today = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate]   = useState(today);
-  const [events, setEvents]               = useState<ScheduleEvent[]>([]);
-  const [markedDates, setMarkedDates]     = useState<Record<string, MarkedDate>>({});
-  const [loading, setLoading]             = useState(false);
-  const [babies, setBabies]               = useState<any[]>([]);
+  const dispatch = useAppDispatch();
+  const { items: babies } = useAppSelector(state => state.babies);
+  const { items: activities } = useAppSelector(state => state.activities);
+  const { items: tasks } = useAppSelector(state => state.tasks);
+  const { items: reminders } = useAppSelector(state => state.reminders);
   const [selectedBaby, setSelectedBaby]   = useState<any>(null);
+  const [loading, setLoading]             = useState(false);
+
+  // Feedback banner state
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Modal state
   const [modalVisible, setModalVisible]   = useState(false);
@@ -75,49 +83,52 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   // Load babies
   useEffect(() => {
-    (async () => {
-      const res = await getBabies();
-      const list = Array.isArray(res?.data) ? res.data : [];
-      setBabies(list);
-      if (list.length > 0) setSelectedBaby(list[0]);
-    })();
-  }, []);
+    dispatch(fetchBabies());
+  }, [dispatch]);
 
-  // Load events for selected baby
-  const loadEvents = useCallback(async () => {
+  useEffect(() => {
+    if (babies.length > 0 && !selectedBaby) setSelectedBaby(babies[0]);
+  }, [babies]);
+
+  // Load events for selected baby via Redux
+  const loadEvents = useCallback(() => {
     if (!selectedBaby) return;
-    setLoading(true);
-    try {
-      const babyId = selectedBaby.baby_id;
-      const [actRes, taskRes, remRes] = await Promise.all([
-        getActivities(babyId), getTasks(babyId), getReminders(babyId),
-      ]);
-      const mapped: ScheduleEvent[] = [];
-      (Array.isArray(actRes?.data) ? actRes.data : []).forEach((a: any) => {
-        const date = toDateStr(a.start_time);
-        if (date) mapped.push({ id: a.activity_id, type: "activity", title: activityLabel(a.activity_type), description: a.notes ?? undefined, date, time: toTimeStr(a.start_time), raw: a });
-      });
-      (Array.isArray(taskRes?.data) ? taskRes.data : []).forEach((t: any) => {
-        const date = toDateStr(t.due_at);
-        if (date) mapped.push({ id: t.task_id, type: "task", title: t.title, description: t.description ?? undefined, date, time: toTimeStr(t.due_at), raw: t });
-      });
-      (Array.isArray(remRes?.data) ? remRes.data : []).forEach((r: any) => {
-        const date = toDateStr(r.due_at);
-        if (date) mapped.push({ id: r.reminder_id, type: "reminder", title: r.title, description: r.body ?? undefined, date, time: toTimeStr(r.due_at), raw: r });
-      });
-      setEvents(mapped);
-      const result: Record<string, MarkedDate> = {};
-      mapped.forEach((ev) => {
-        if (!result[ev.date]) result[ev.date] = { dots: [], marked: true };
-        if (!result[ev.date].dots.some(d => d.key === ev.type))
-          result[ev.date].dots.push({ key: ev.type, color: COLORS[ev.type].dot });
-      });
-      setMarkedDates(result);
-    } catch (e) { console.error("Failed to load schedule:", e); }
-    finally { setLoading(false); }
-  }, [selectedBaby]);
+    const babyId = selectedBaby.baby_id;
+    dispatch(fetchActivities(babyId));
+    dispatch(fetchTasks(babyId));
+    dispatch(fetchReminders(babyId));
+  }, [selectedBaby, dispatch]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  // Derive events from store data
+  const events = useMemo(() => {
+    const mapped: ScheduleEvent[] = [];
+    (Array.isArray(activities) ? activities : []).forEach((a: any) => {
+      const date = toDateStr(a.start_time);
+      if (date) mapped.push({ id: a.activity_id, type: "activity", title: activityLabel(a.activity_type), description: a.notes ?? undefined, date, time: toTimeStr(a.start_time), raw: a });
+    });
+    (Array.isArray(tasks) ? tasks : []).forEach((t: any) => {
+      const date = toDateStr(t.due_at);
+      if (date) mapped.push({ id: t.task_id, type: "task", title: t.title, description: t.description ?? undefined, date, time: toTimeStr(t.due_at), raw: t });
+    });
+    (Array.isArray(reminders) ? reminders : []).forEach((r: any) => {
+      const date = toDateStr(r.due_at);
+      if (date) mapped.push({ id: r.reminder_id, type: "reminder", title: r.title, description: r.body ?? undefined, date, time: toTimeStr(r.due_at), raw: r });
+    });
+    return mapped;
+  }, [activities, tasks, reminders]);
+
+  // Derive marked dates from events
+  const markedDates = useMemo(() => {
+    const result: Record<string, MarkedDate> = {};
+    events.forEach((ev) => {
+      if (!result[ev.date]) result[ev.date] = { dots: [], marked: true };
+      if (!result[ev.date].dots.some(d => d.key === ev.type))
+        result[ev.date].dots.push({ key: ev.type, color: COLORS[ev.type].dot });
+    });
+    return result;
+  }, [events]);
 
   const dayEvents = events.filter(e => e.date === selectedDate).sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 
@@ -154,7 +165,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   // Open modal
   const openModal = (type: EventType) => {
     if (!babies.length) {
-      Alert.alert("No Babies", "Add a baby from Profile first.");
+      setFeedback({ type: "error", message: "No babies found. Add a baby from Profile first." });
       return;
     }
     const base = new Date(`${selectedDate}T09:00:00`);
@@ -166,8 +177,9 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   // Save event
   const handleSave = async () => {
-    if (!modalBaby) { Alert.alert("Select a Baby", "Please select a baby first."); return; }
-    if (!form.title.trim() && modalType !== "activity") { Alert.alert("Validation", "Title is required."); return; }
+    setFeedback(null);
+    if (!modalBaby) { setFeedback({ type: "error", message: "Please select a baby first." }); return; }
+    if (!form.title.trim() && modalType !== "activity") { setFeedback({ type: "error", message: "Title is required." }); return; }
     setSaving(true);
     try {
       const babyId = modalBaby.baby_id;
@@ -195,7 +207,7 @@ export default function ScheduleScreen({ navigation }: Props) {
       if (selectedBaby?.baby_id === babyId) await loadEvents();
       else setSelectedBaby(modalBaby);
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Failed to save.");
+      setFeedback({ type: "error", message: e?.message ?? "Failed to save." });
     } finally { setSaving(false); }
   };
 
@@ -203,7 +215,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <LinearGradient colors={["#c9e8f9", "#e8f4fd"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
+      <LinearGradient colors={["#c9e8f9", "#e8f4fd"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Text style={styles.headerTitle}>Schedule</Text>
         {babies.length > 1 && (
           <>
@@ -222,7 +234,7 @@ export default function ScheduleScreen({ navigation }: Props) {
         )}
         {babies.length === 1 && (
           <View style={styles.singleBabyRow}>
-            <Ionicons name="person-circle-outline" size={16} color="#4A90D9" />
+            <Ionicons name="person-circle-outline" size={16} color={colors.primaryDark} />
             <Text style={styles.singleBabyText}>{selectedBaby?.display_name}</Text>
           </View>
         )}
@@ -241,6 +253,14 @@ export default function ScheduleScreen({ navigation }: Props) {
         ))}
       </View>
 
+      {feedback && !modalVisible && (
+        <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+          <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+            {feedback.message}
+          </Text>
+        </View>
+      )}
+
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         {/* Calendar */}
         <Calendar
@@ -253,14 +273,14 @@ export default function ScheduleScreen({ navigation }: Props) {
             [selectedDate]: {
               ...(markedDates[selectedDate] ?? { dots: [], marked: false }),
               selected: true,
-              selectedColor: "#4A90D9",
+              selectedColor: colors.primaryDark,
             },
           }}
           theme={{
-            todayTextColor: "#4A90D9",
-            selectedDayBackgroundColor: "#4A90D9",
-            arrowColor: "#4A90D9",
-            dotColor: "#4A90D9",
+            todayTextColor: colors.primaryDark,
+            selectedDayBackgroundColor: colors.primaryDark,
+            arrowColor: colors.primaryDark,
+            dotColor: colors.primaryDark,
           }}
         />
 
@@ -292,7 +312,7 @@ export default function ScheduleScreen({ navigation }: Props) {
           {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
         </Text>
         {loading ? (
-          <ActivityIndicator size="large" color="#4A90D9" style={{ marginTop: verticalScale(24) }} />
+          <ActivityIndicator size="large" color={colors.primaryDark} style={{ marginTop: verticalScale(24) }} />
         ) : dayEvents.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="calendar-outline" size={moderateScale(48)} color="#c0d4e8" />
@@ -314,8 +334,9 @@ export default function ScheduleScreen({ navigation }: Props) {
         selectedDate={selectedDate}
         babies={babies}
         modalBaby={modalBaby}
+        feedback={modalVisible ? feedback : null}
         onSelectBaby={b => setModalBaby(b)}
-        onClose={() => setModalVisible(false)}
+        onClose={() => { setModalVisible(false); setFeedback(null); }}
         onSave={handleSave}
         onChange={(key, val) => setForm(f => ({ ...f, [key]: val }))}
         onChangeDate={(key, date) => setForm(f => ({ ...f, [key]: date }))}
@@ -332,7 +353,6 @@ export default function ScheduleScreen({ navigation }: Props) {
         />
       )}
 
-      <NavBar navigation={navigation} activeTab="schedule" />
     </View>
   );
 }
@@ -365,6 +385,7 @@ function EventCard({ event }: { event: ScheduleEvent }) {
 interface ModalProps {
   visible: boolean; type: EventType; form: any; saving: boolean;
   selectedDate: string; babies: any[]; modalBaby: any;
+  feedback: { type: "success" | "error"; message: string } | null;
   onSelectBaby: (b: any) => void; onClose: () => void; onSave: () => void;
   onChange: (key: string, val: string) => void;
   onChangeDate: (key: string, date: Date | null) => void;
@@ -372,7 +393,7 @@ interface ModalProps {
 }
 
 function AddEventModal({
-  visible, type, form, saving, selectedDate, babies, modalBaby,
+  visible, type, form, saving, selectedDate, babies, modalBaby, feedback,
   onSelectBaby, onClose, onSave, onChange, onChangeDate, onOpenPicker,
 }: ModalProps) {
   const c = COLORS[type];
@@ -409,6 +430,13 @@ function AddEventModal({
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled">
+            {feedback && (
+              <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                  {feedback.message}
+                </Text>
+              </View>
+            )}
             <Text style={styles.modalDate}>
               📅{"  "}{new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
             </Text>
@@ -421,7 +449,7 @@ function AddEventModal({
               </View>
               {babies.length === 0 ? (
                 <View style={styles.noBabyModalHint}>
-                  <Ionicons name="alert-circle-outline" size={18} color="#F5A623" />
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.taskDot} />
                   <Text style={styles.noBabyModalText}>No babies found. Add a baby from Profile first.</Text>
                 </View>
               ) : (
@@ -566,20 +594,19 @@ function AddEventModal({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f7f9fc" },
   header: {
-    paddingTop: Platform.OS === "android" ? verticalScale(40) : verticalScale(54),
     paddingBottom: verticalScale(14), paddingHorizontal: scale(20),
   },
   headerTitle: { fontSize: moderateScale(26), fontWeight: "800", color: "#1a3d5c", marginBottom: verticalScale(6) },
   viewingLabel: { fontSize: moderateScale(11), color: "#5a82a8", fontWeight: "600", marginBottom: verticalScale(4), textTransform: "uppercase", letterSpacing: 0.5 },
   babyPicker: { flexDirection: "row", marginTop: verticalScale(2) },
-  babyChip: { paddingHorizontal: scale(14), paddingVertical: verticalScale(6), borderRadius: 20, borderWidth: 1.5, borderColor: "#4A90D9", marginRight: scale(8), backgroundColor: "#fff" },
-  babyChipActive: { backgroundColor: "#4A90D9" },
-  babyChipText: { fontSize: moderateScale(13), color: "#4A90D9", fontWeight: "600" },
+  babyChip: { paddingHorizontal: scale(14), paddingVertical: verticalScale(6), borderRadius: 20, borderWidth: 1.5, borderColor: colors.primaryDark, marginRight: scale(8), backgroundColor: colors.card },
+  babyChipActive: { backgroundColor: colors.primaryDark },
+  babyChipText: { fontSize: moderateScale(13), color: colors.primaryDark, fontWeight: "600" },
   babyChipTextActive: { color: "#fff" },
   singleBabyRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: verticalScale(2) },
-  singleBabyText: { fontSize: moderateScale(13), color: "#4A90D9", fontWeight: "600" },
+  singleBabyText: { fontSize: moderateScale(13), color: colors.primaryDark, fontWeight: "600" },
   noBabyWarning: { fontSize: moderateScale(13), color: "#e07b00", fontWeight: "600", marginTop: verticalScale(4) },
-  legend: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: scale(18), paddingVertical: verticalScale(8), backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#eaeaea" },
+  legend: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: scale(18), paddingVertical: verticalScale(8), backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: "#eaeaea" },
   legendItem: { flexDirection: "row", alignItems: "center", gap: scale(5) },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendLabel: { fontSize: moderateScale(12), color: "#555", fontWeight: "500" },
@@ -587,8 +614,8 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 20 },
   calendar: { marginHorizontal: scale(12), marginTop: verticalScale(10), borderRadius: 16, elevation: 2, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, overflow: "hidden" },
   addRow: { flexDirection: "row", justifyContent: "space-evenly", marginHorizontal: scale(12), marginTop: verticalScale(14), marginBottom: verticalScale(4) },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: scale(12), paddingVertical: verticalScale(7), backgroundColor: "#fff" },
-  addBtnDisabled: { borderColor: "#ddd", backgroundColor: "#f5f5f5" },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: scale(12), paddingVertical: verticalScale(7), backgroundColor: colors.card },
+  addBtnDisabled: { borderColor: "#ddd", backgroundColor: colors.background },
   addBtnText: { fontSize: moderateScale(12), fontWeight: "600" },
   noBabyHint: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginTop: verticalScale(6), marginBottom: verticalScale(2) },
   noBabyHintText: { fontSize: moderateScale(12), color: "#aaa", fontStyle: "italic" },
@@ -597,15 +624,15 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: moderateScale(16), fontWeight: "600", color: "#aec6de", marginTop: verticalScale(12) },
   emptySubText: { fontSize: moderateScale(13), color: "#c3d5e8", textAlign: "center", marginTop: verticalScale(6) },
   card: { flexDirection: "row", alignItems: "center", marginHorizontal: scale(16), marginBottom: verticalScale(10), borderRadius: 14, borderLeftWidth: 4, padding: scale(12), elevation: 1, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } },
-  cardIcon: { width: moderateScale(36), height: moderateScale(36), borderRadius: moderateScale(18), backgroundColor: "#fff", alignItems: "center", justifyContent: "center", marginRight: scale(10) },
+  cardIcon: { width: moderateScale(36), height: moderateScale(36), borderRadius: moderateScale(18), backgroundColor: colors.card, alignItems: "center", justifyContent: "center", marginRight: scale(10) },
   cardBody: { flex: 1 },
   cardTitle: { fontSize: moderateScale(14), fontWeight: "700" },
-  cardDesc: { fontSize: moderateScale(12), color: "#666", marginTop: 2 },
+  cardDesc: { fontSize: moderateScale(12), color: colors.textSecondary, marginTop: 2 },
   cardTime: { fontSize: moderateScale(11), color: "#888", marginTop: 3 },
   cardBadge: { borderRadius: 10, paddingHorizontal: scale(8), paddingVertical: 3, marginLeft: scale(6) },
   cardBadgeText: { fontSize: moderateScale(10), color: "#fff", fontWeight: "700" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.42)", justifyContent: "flex-end" },
-  modalCard: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: scale(20), paddingTop: verticalScale(16), paddingBottom: verticalScale(30), maxHeight: height * 0.85 },
+  modalCard: { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: scale(20), paddingTop: verticalScale(16), paddingBottom: verticalScale(30), maxHeight: height * 0.85 },
   modalHeader: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1.5, paddingBottom: verticalScale(10), marginBottom: verticalScale(12) },
   modalTitle: { fontSize: moderateScale(18), fontWeight: "800", flex: 1 },
   modalClose: { padding: 4 },
@@ -619,14 +646,14 @@ const styles = StyleSheet.create({
   selectBabyPrompt: { fontSize: moderateScale(12), color: "#e07b00", fontStyle: "italic", marginTop: verticalScale(6), marginBottom: verticalScale(4) },
   selectedBabyConfirm: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#f0f6fc", borderRadius: 8, paddingHorizontal: scale(10), paddingVertical: verticalScale(6), marginBottom: verticalScale(14), marginTop: verticalScale(4) },
   selectedBabyConfirmText: { fontSize: moderateScale(12), fontWeight: "700" },
-  noBabyModalHint: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff8ed", borderRadius: 10, padding: scale(12), marginTop: verticalScale(6), borderWidth: 1, borderColor: "#F5A623" },
-  noBabyModalText: { flex: 1, fontSize: moderateScale(13), color: "#9A6100" },
+  noBabyModalHint: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff8ed", borderRadius: 10, padding: scale(12), marginTop: verticalScale(6), borderWidth: 1, borderColor: colors.taskDot },
+  noBabyModalText: { flex: 1, fontSize: moderateScale(13), color: colors.taskText },
   fieldGroup: { marginBottom: verticalScale(14) },
   fieldLabel: { fontSize: moderateScale(13), fontWeight: "600", color: "#2d4150", marginBottom: verticalScale(6) },
   input: { borderWidth: 1.5, borderColor: "#d8e4f0", borderRadius: 10, paddingHorizontal: scale(12), paddingVertical: verticalScale(10), fontSize: moderateScale(14), color: "#2d4150", backgroundColor: "#f7f9fc" },
   inputMultiline: { height: verticalScale(72), textAlignVertical: "top" },
   chip: { borderWidth: 1.5, borderColor: "#c0d4e8", borderRadius: 20, paddingHorizontal: scale(12), paddingVertical: verticalScale(5), marginRight: scale(8), marginBottom: verticalScale(6), backgroundColor: "#f0f6fc" },
-  chipText: { fontSize: moderateScale(12), color: "#4A90D9", fontWeight: "600" },
+  chipText: { fontSize: moderateScale(12), color: colors.primaryDark, fontWeight: "600" },
   dtRow: { flexDirection: "row", gap: scale(8) },
   dtBtn: { flex: 1, flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1.5, borderRadius: 10, paddingHorizontal: scale(10), paddingVertical: verticalScale(10), backgroundColor: "#f7f9fc" },
   dtBtnText: { fontSize: moderateScale(12), fontWeight: "600", flexShrink: 1 },
@@ -638,5 +665,33 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: "#6d8eb0", fontWeight: "600", fontSize: moderateScale(14) },
   saveBtn: { paddingHorizontal: scale(22), paddingVertical: verticalScale(10), borderRadius: 10, minWidth: scale(80), alignItems: "center" },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: moderateScale(14) },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
+  },
 });
 

@@ -39,6 +39,12 @@ export async function createReminder(req: Request, res: Response): Promise<void>
 export async function listReminders(req: Request, res: Response): Promise<void> {
   try {
     const babyId = parseInt(req.params.babyId, 10);
+
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     const reminders = await reminderService.getBabyReminders(babyId);
     res.status(200).json({ success: true, data: reminders, total: reminders.length });
   } catch (error: any) {
@@ -53,6 +59,12 @@ export async function listReminders(req: Request, res: Response): Promise<void> 
 export async function getReminder(req: Request, res: Response): Promise<void> {
   try {
     const reminderId = parseInt(req.params.reminderId, 10);
+
+    if (isNaN(reminderId)) {
+      res.status(400).json({ success: false, message: "Invalid reminder ID" });
+      return;
+    }
+
     const reminder = await reminderService.getReminder(reminderId);
 
     if (!reminder) {
@@ -72,6 +84,11 @@ export async function getReminder(req: Request, res: Response): Promise<void> {
 export async function updateReminder(req: Request, res: Response): Promise<void> {
   try {
     const reminderId = parseInt(req.params.reminderId, 10);
+
+    if (isNaN(reminderId)) {
+      res.status(400).json({ success: false, message: "Invalid reminder ID" });
+      return;
+    }
 
     const data: UpdateReminderDTO = {};
     if (req.body.title     !== undefined) data.title     = req.body.title;
@@ -99,6 +116,12 @@ export async function updateReminder(req: Request, res: Response): Promise<void>
 export async function deleteReminder(req: Request, res: Response): Promise<void> {
   try {
     const reminderId = parseInt(req.params.reminderId, 10);
+
+    if (isNaN(reminderId)) {
+      res.status(400).json({ success: false, message: "Invalid reminder ID" });
+      return;
+    }
+
     const deleted = await reminderService.deleteReminder(reminderId);
 
     if (!deleted) {

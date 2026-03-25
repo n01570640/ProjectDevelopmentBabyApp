@@ -37,9 +37,3 @@ export interface VaccinationWithVaccineDTO extends VaccinationDTO {
   vaccine_name: string;
   schedule_weeks: number;
 }
-
-// Response for listing vaccinations
-export interface VaccinationListResponseDTO {
-  vaccinations: VaccinationWithVaccineDTO[];
-  total: number;
-}

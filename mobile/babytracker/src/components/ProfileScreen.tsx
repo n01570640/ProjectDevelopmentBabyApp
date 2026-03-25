@@ -1,21 +1,33 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Modal,
   TextInput,
   Alert,
   Image,
   ActivityIndicator,
+  Share,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from "react-native";
+
+if (Platform.OS === "android") {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Baby } from "../types/baby.types";
-import NavBar from "./navBar";
-import { getBabies } from "../../services/babyService";
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
+import { createInvitation, getInvitations, cancelInvitation } from "../../services/invitationService";
+import { getCaregivers, removeCaregiver } from "../../services/caregiverService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { colors } from "../theme/colors";
+import ModalWrapper from "./shared/ModalWrapper";
 
 interface ShareModalProps {
   baby: Baby | null;
@@ -25,26 +37,49 @@ interface ShareModalProps {
 
 function ShareModal({ baby, visible, onClose }: ShareModalProps) {
   const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   if (!baby) return null;
 
-  const handleSendInvite = () => {
-    Alert.alert("Success", `Invite sent to ${email}`);
-    setEmail("");
-    onClose();
+  const handleSendInvite = async () => {
+    setFeedback(null);
+    if (!email.trim()) {
+      setFeedback({ type: "error", message: "Please enter an email address" });
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await createInvitation(baby.id, email.trim(), 2);
+      if (result?.success && result.data?.token) {
+        const inviteLink = `babytracker://invitations/${result.data.token}`;
+        setEmail("");
+        setFeedback(null);
+        onClose();
+        try {
+          await Share.share({
+            message: `You've been invited to help care for ${baby.name}! Open this link to accept: ${inviteLink}`,
+          });
+        } catch {}
+      } else {
+        setFeedback({ type: "error", message: result?.message ?? "Failed to create invitation" });
+      }
+    } catch (error: any) {
+      setFeedback({ type: "error", message: error.message ?? "Failed to send invitation" });
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modal}>
-          <Text style={styles.modalTitle}>Share {baby.name}</Text>
-
+    <ModalWrapper visible={visible} onClose={onClose} title={`Share ${baby.name}`}>
+          {feedback && (
+            <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+              <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                {feedback.message}
+              </Text>
+            </View>
+          )}
           <Text style={styles.label}>Email</Text>
           <TextInput
             value={email}
@@ -65,14 +100,15 @@ function ShareModal({ baby, visible, onClose }: ShareModalProps) {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSendInvite}
-              style={styles.sendButton}
+              style={[styles.sendButton, sending && { opacity: 0.6 }]}
+              disabled={sending}
             >
-              <Text style={styles.sendButtonText}>Send Invite</Text>
+              <Text style={styles.sendButtonText}>
+                {sending ? "Sending..." : "Send Invite"}
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </ModalWrapper>
   );
 }
 
@@ -107,16 +143,7 @@ function PhotoModal({
   if (!baby) return null;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modal}>
-          <Text style={styles.modalTitle}>Add Photo for {baby.name}</Text>
-
+    <ModalWrapper visible={visible} onClose={onClose} title={`Add Photo for ${baby.name}`}>
           <TouchableOpacity
             style={styles.photoOption}
             onPress={() => {
@@ -124,7 +151,7 @@ function PhotoModal({
               onTakePhoto();
             }}
           >
-            <Ionicons name="camera-outline" size={24} color="#81b6eb" />
+            <Ionicons name="camera-outline" size={24} color={colors.primary} />
             <Text style={styles.photoOptionText}>Take Photo</Text>
           </TouchableOpacity>
 
@@ -135,7 +162,7 @@ function PhotoModal({
               onChooseFromLibrary();
             }}
           >
-            <Ionicons name="images-outline" size={24} color="#81b6eb" />
+            <Ionicons name="images-outline" size={24} color={colors.primary} />
             <Text style={styles.photoOptionText}>Choose from Library</Text>
           </TouchableOpacity>
 
@@ -144,125 +171,274 @@ function PhotoModal({
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </ModalWrapper>
   );
 }
 
+interface PendingInvite {
+  invite_id: number;
+  invited_email: string;
+  invited_role: string;
+}
+
 function CaregiversModal({ baby, visible, onClose }: CaregiversModalProps) {
+  const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmingType, setConfirmingType] = useState<"caregiver" | "invite" | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (!baby) return;
+    setLoading(true);
+    try {
+      const res = await getCaregivers(baby.id);
+      if (res?.success && Array.isArray(res.data)) {
+        setCaregivers(
+          res.data.map((c: any) => ({
+            id: c.user_id,
+            name: c.full_name,
+            email: c.email,
+            role: c.access_role?.replace("_CAREGIVER", "") ?? c.access_role,
+          }))
+        );
+      }
+      if (baby.canShare) {
+        const invRes = await getInvitations(baby.id);
+        if (invRes?.success && Array.isArray(invRes.data)) {
+          setPendingInvites(invRes.data);
+        }
+      }
+    } catch (e) {
+      console.error("CaregiversModal: failed to fetch data", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [baby]);
+
+  useEffect(() => {
+    if (visible && baby) {
+      fetchData();
+    }
+  }, [visible, baby, fetchData]);
+
   if (!baby) return null;
 
-  // Demo caregivers data
-  const caregivers: Caregiver[] = [
-    { id: 1, name: "John Smith", email: "john@example.com", role: "PRIMARY" },
-    { id: 2, name: "Jane Doe", email: "jane@example.com", role: "SECONDARY" },
-    { id: 3, name: "Bob Wilson", email: "bob@example.com", role: "SECONDARY" },
-  ];
+  const showFeedback = (type: "success" | "error", message: string) => {
+    setFeedback({ type, message });
+    setTimeout(() => setFeedback(null), 2500);
+  };
 
   const handleRemoveCaregiver = (caregiver: Caregiver) => {
-    Alert.alert(
-      "Remove Caregiver",
-      `Remove ${caregiver.name}'s access to ${baby.name}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert("Success", `${caregiver.name} removed`);
-          },
-        },
-      ],
-    );
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setConfirmingId(`caregiver-${caregiver.id}`);
+    setConfirmingType("caregiver");
+  };
+
+  const handleCancelInvite = (invite: PendingInvite) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setConfirmingId(`invite-${invite.invite_id}`);
+    setConfirmingType("invite");
+  };
+
+  const cancelConfirm = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setConfirmingId(null);
+    setConfirmingType(null);
+  };
+
+  const confirmAction = async (item: Caregiver | PendingInvite) => {
+    if (!baby || actionLoading) return;
+    setActionLoading(true);
+    try {
+      if (confirmingType === "caregiver") {
+        const cg = item as Caregiver;
+        const res = await removeCaregiver(baby.id, cg.id);
+        if (res?.success) {
+          showFeedback("success", `${cg.name} removed`);
+          fetchData();
+        } else {
+          showFeedback("error", res?.message ?? "Failed to remove caregiver");
+        }
+      } else {
+        const inv = item as PendingInvite;
+        const res = await cancelInvitation(baby.id, inv.invite_id);
+        if (res?.success) {
+          showFeedback("success", `Invitation to ${inv.invited_email} cancelled`);
+          fetchData();
+        } else {
+          showFeedback("error", res?.message ?? "Failed to cancel invitation");
+        }
+      }
+    } catch (e: any) {
+      showFeedback("error", e.message ?? "An error occurred");
+    } finally {
+      setActionLoading(false);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setConfirmingId(null);
+      setConfirmingType(null);
+    }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modal}>
-          <Text style={styles.modalTitle}>{baby.name} — Caregivers</Text>
+    <ModalWrapper visible={visible} onClose={onClose} title={`${baby.name} — Caregivers`}>
 
-          <ScrollView style={styles.caregiversList}>
-            {caregivers.map((caregiver) => (
-              <View key={caregiver.id} style={styles.caregiverItem}>
-                <View style={styles.caregiverInfo}>
-                  <Text style={styles.caregiverName}>{caregiver.name}</Text>
-                  <Text style={styles.caregiverEmail}>{caregiver.email}</Text>
-                  <Text style={styles.caregiverRole}>{caregiver.role}</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 20 }} />
+          ) : (
+            <ScrollView style={styles.caregiversList}>
+              {feedback && (
+                <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                  <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                    {feedback.message}
+                  </Text>
                 </View>
-                {baby.role === "PRIMARY" && caregiver.role !== "PRIMARY" && (
-                  <TouchableOpacity
-                    onPress={() => handleRemoveCaregiver(caregiver)}
-                    style={styles.removeButton}
+              )}
+
+              {caregivers.map((caregiver) => {
+                const isConfirming = confirmingId === `caregiver-${caregiver.id}`;
+                return (
+                  <View
+                    key={caregiver.id}
+                    style={[styles.caregiverItem, isConfirming && styles.caregiverItemConfirming]}
                   >
-                    <Ionicons name="trash-outline" size={20} color="#ff4444" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-          </ScrollView>
+                    {isConfirming ? (
+                      <>
+                        <Text style={styles.confirmText}>
+                          Remove {caregiver.name}?
+                        </Text>
+                        <View style={styles.confirmActionsStacked}>
+                          <TouchableOpacity
+                            onPress={() => confirmAction(caregiver)}
+                            style={[styles.confirmRemoveBtn, actionLoading && { opacity: 0.6 }]}
+                            disabled={actionLoading}
+                          >
+                            <Text style={styles.confirmRemoveText}>
+                              {actionLoading ? "..." : "Yes"}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={cancelConfirm} style={styles.confirmCancelBtn}>
+                            <Text style={styles.confirmCancelText}>No</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.caregiverInfo}>
+                          <Text style={styles.caregiverName}>{caregiver.name}</Text>
+                          <Text style={styles.caregiverEmail}>{caregiver.email}</Text>
+                          <Text style={styles.caregiverRole}>{caregiver.role}</Text>
+                        </View>
+                        {baby.role === "PRIMARY" && caregiver.role !== "PRIMARY" && (
+                          <TouchableOpacity
+                            onPress={() => handleRemoveCaregiver(caregiver)}
+                            style={styles.removeButton}
+                          >
+                            <Ionicons name="trash-outline" size={20} color={colors.error} />
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+
+              {pendingInvites.length > 0 && (
+                <>
+                  <Text style={[styles.caregiverRole, { marginTop: 10, marginBottom: 6 }]}>
+                    PENDING INVITATIONS
+                  </Text>
+                  {pendingInvites.map((invite) => {
+                    const isConfirming = confirmingId === `invite-${invite.invite_id}`;
+                    return (
+                      <View
+                        key={invite.invite_id}
+                        style={[styles.caregiverItem, isConfirming && styles.caregiverItemConfirming]}
+                      >
+                        {isConfirming ? (
+                          <>
+                            <Text style={styles.confirmText}>
+                              Cancel invite to {invite.invited_email}?
+                            </Text>
+                            <View style={styles.confirmActionsStacked}>
+                              <TouchableOpacity
+                                onPress={() => confirmAction(invite)}
+                                style={[styles.confirmRemoveBtn, actionLoading && { opacity: 0.6 }]}
+                                disabled={actionLoading}
+                              >
+                                <Text style={styles.confirmRemoveText}>
+                                  {actionLoading ? "..." : "Yes"}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={cancelConfirm} style={styles.confirmCancelBtn}>
+                                <Text style={styles.confirmCancelText}>No</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        ) : (
+                          <>
+                            <View style={styles.caregiverInfo}>
+                              <Text style={styles.caregiverEmail}>{invite.invited_email}</Text>
+                              <Text style={styles.caregiverRole}>
+                                {invite.invited_role?.replace("_CAREGIVER", "") ?? "PENDING"}
+                              </Text>
+                            </View>
+                            {baby.role === "PRIMARY" && (
+                              <TouchableOpacity
+                                onPress={() => handleCancelInvite(invite)}
+                                style={styles.removeButton}
+                              >
+                                <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+                              </TouchableOpacity>
+                            )}
+                          </>
+                        )}
+                      </View>
+                    );
+                  })}
+                </>
+              )}
+            </ScrollView>
+          )}
 
           <View style={styles.modalActions}>
             <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
               <Text style={styles.cancelButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </ModalWrapper>
   );
 }
 
 export default function ProfileScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showCaregivers, setShowCaregivers] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [babyImages, setBabyImages] = useState<{ [key: number]: string }>({});
 
-  // ── Live API data
-  const [babies, setBabies] = useState<Baby[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ── Redux store data
+  const dispatch = useAppDispatch();
+  const { items: rawBabies, loading } = useAppSelector(state => state.babies);
 
-  const fetchBabies = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getBabies();
-      if (res?.success && Array.isArray(res.data)) {
-        // Map BabyWithDetailsDTO → Baby (local type)
-        const mapped: Baby[] = res.data.map((b: any) => ({
-          id: b.baby_id,
-          name: b.display_name,
-          dob: b.date_of_birth?.slice(0, 10) ?? "",
-          sex: b.sex === "male" ? "M" : b.sex === "female" ? "F" : b.sex ?? "—",
-          role: b.access_role === "PRIMARY_CAREGIVER" ? "PRIMARY" : "SECONDARY",
-          canShare: b.can_share ?? false,
-        }));
-        setBabies(mapped);
-      }
-    } catch (e) {
-      console.error("ProfileScreen: failed to fetch babies", e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const babies: Baby[] = useMemo(() =>
+    rawBabies.map((b: any) => ({
+      id: b.baby_id,
+      name: b.display_name,
+      dob: b.date_of_birth?.slice(0, 10) ?? "",
+      sex: b.sex === "male" ? "M" : b.sex === "female" ? "F" : b.sex ?? "—",
+      role: b.access_role === "PRIMARY_CAREGIVER" ? "PRIMARY" : "SECONDARY",
+      canShare: b.can_share ?? false,
+    })),
+    [rawBabies]
+  );
 
-  // Fetch on mount
   useEffect(() => {
-    fetchBabies();
-  }, [fetchBabies]);
-
-  // Re-fetch whenever this screen comes into focus (e.g. after AddChild)
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", fetchBabies);
-    return unsubscribe;
-  }, [navigation, fetchBabies]);
+    dispatch(fetchBabies());
+  }, [dispatch]);
 
   const handleViewHistory = (baby: Baby) => {
     setSelectedBaby(baby);
@@ -337,7 +513,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}>
         {/* Title row with Add button */}
         <View style={styles.titleRow}>
           <Text style={styles.title}>My Babies</Text>
@@ -354,7 +530,7 @@ export default function ProfileScreen({ navigation }: any) {
         {/* Loading */}
         {loading && (
           <View style={styles.centeredState}>
-            <ActivityIndicator size="large" color="#81b6eb" />
+            <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.stateText}>Loading babies...</Text>
           </View>
         )}
@@ -394,7 +570,7 @@ export default function ProfileScreen({ navigation }: any) {
                     style={styles.babyImage}
                   />
                 ) : (
-                  <Ionicons name="person" size={40} color="#81b6eb" />
+                  <Ionicons name="person" size={40} color={colors.primary} />
                 )}
                 <View style={styles.cameraIconOverlay} pointerEvents="none">
                   <Ionicons name="camera" size={16} color="#fff" />
@@ -475,7 +651,6 @@ export default function ProfileScreen({ navigation }: any) {
         onChooseFromLibrary={handleChooseFromLibrary}
       />
 
-      <NavBar navigation={navigation} activeTab="profile" />
     </View>
   );
 }
@@ -483,7 +658,7 @@ export default function ProfileScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: 20,
@@ -504,7 +679,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -513,7 +688,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 24,
@@ -535,7 +710,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.card,
     borderRadius: 8,
     padding: 15,
     marginBottom: 15,
@@ -559,7 +734,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 15,
     borderWidth: 2,
-    borderColor: "#81b6eb",
+    borderColor: colors.primary,
     overflow: "visible",
   },
   babyImage: {
@@ -572,7 +747,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: -2,
     right: -2,
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     width: 24,
     height: 24,
@@ -593,7 +768,7 @@ const styles = StyleSheet.create({
   babyName: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#333",
+    color: colors.textPrimary,
   },
   badge: {
     paddingVertical: 3,
@@ -601,10 +776,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   badgePrimary: {
-    backgroundColor: "#2ecc71",
+    backgroundColor: colors.success,
   },
   badgeSecondary: {
-    backgroundColor: "#999",
+    backgroundColor: colors.textTertiary,
   },
   badgeText: {
     color: "#fff",
@@ -613,7 +788,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   actions: {
@@ -623,40 +798,22 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   actionButton: {
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 6,
   },
   actionButtonPrimary: {
-    backgroundColor: "#4A90D9",
+    backgroundColor: colors.primaryDark,
   },
   actionButtonText: {
     color: "#fff",
     fontSize: 14,
     fontWeight: "500",
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modal: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 8,
-    width: 300,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 15,
-    color: "#333",
-  },
   label: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     marginBottom: 5,
   },
   input: {
@@ -669,12 +826,12 @@ const styles = StyleSheet.create({
   },
   roleText: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     marginBottom: 15,
   },
   roleBold: {
     fontWeight: "bold",
-    color: "#333",
+    color: colors.textPrimary,
   },
   modalActions: {
     flexDirection: "row",
@@ -685,10 +842,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 6,
-    backgroundColor: "#e0e0e0",
+    backgroundColor: colors.cancel,
   },
   cancelButtonText: {
-    color: "#333",
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "500",
   },
@@ -696,7 +853,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 6,
-    backgroundColor: "#81b6eb",
+    backgroundColor: colors.primary,
   },
   sendButtonText: {
     color: "#fff",
@@ -722,22 +879,91 @@ const styles = StyleSheet.create({
   caregiverName: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#333",
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   caregiverEmail: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   caregiverRole: {
     fontSize: 12,
-    color: "#999",
+    color: colors.textTertiary,
     fontWeight: "600",
   },
   removeButton: {
     padding: 8,
     marginLeft: 10,
+  },
+  caregiverItemConfirming: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.errorBorder,
+  },
+  confirmText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.errorDark,
+  },
+  confirmActionsStacked: {
+    flexDirection: "column",
+    gap: 4,
+    marginLeft: 8,
+    alignItems: "stretch",
+  },
+  confirmCancelBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: colors.cancel,
+    alignItems: "center",
+  },
+  confirmCancelText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.textPrimary,
+  },
+  confirmRemoveBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: colors.error,
+    alignItems: "center",
+  },
+  confirmRemoveText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
   },
   photoOption: {
     flexDirection: "row",
@@ -749,7 +975,7 @@ const styles = StyleSheet.create({
   },
   photoOptionText: {
     fontSize: 16,
-    color: "#333",
+    color: colors.textPrimary,
     marginLeft: 15,
     fontWeight: "500",
   },

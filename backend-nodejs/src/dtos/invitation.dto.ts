@@ -1,19 +1,11 @@
-import { AccessRole } from "./caregiver-access.dto";
-
 /**
  * DTOs for invitation system
  */
 
-// Valid roles for invitations (cannot invite as PRIMARY_CAREGIVER)
-export type InviteRole = Exclude<AccessRole, AccessRole.PRIMARY_CAREGIVER>;
-
 // Create invitation request
 export interface CreateInvitationDTO {
   invited_email: string;
-  invited_role: InviteRole;
-  can_edit_health?: boolean;
-  can_edit_activities?: boolean;
-  can_share?: boolean;
+  invited_role: number;
 }
 
 // Invitation record from database
@@ -21,7 +13,8 @@ export interface InvitationDTO {
   invite_id: number;
   baby_id: number;
   invited_email: string;
-  invited_role: string;
+  invited_role: number;
+  invited_role_name?: string;
   inviter_user_id: number;
   token: string;
   created_at: string;
@@ -50,6 +43,7 @@ export interface InvitationResponseDTO {
 export interface InvitationDetailsDTO {
   baby_name: string;
   inviter_name: string;
+  invited_email: string;
   invited_role: string;
   expires_at: string;
   is_expired: boolean;

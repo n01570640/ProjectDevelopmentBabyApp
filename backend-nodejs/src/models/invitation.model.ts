@@ -9,7 +9,7 @@ import { generateSecureToken, generateExpirationDate } from "../utils/token.util
 export async function createInvitation(data: {
   baby_id: number;
   invited_email: string;
-  invited_role: string;
+  invited_role: number;
   inviter_user_id: number;
   expires_in_days?: number;
 }): Promise<InvitationDTO> {
@@ -21,7 +21,7 @@ export async function createInvitation(data: {
     .request()
     .input("baby_id", sql.BigInt, data.baby_id)
     .input("invited_email", sql.NVarChar(255), data.invited_email.toLowerCase())
-    .input("invited_role", sql.VarChar(30), data.invited_role)
+    .input("invited_role", sql.Int, data.invited_role)
     .input("inviter_user_id", sql.BigInt, data.inviter_user_id)
     .input("token", sql.UniqueIdentifier, token)
     .input("expires_at", sql.DateTime2, expires_at)
@@ -47,10 +47,11 @@ export async function findInvitationById(
     .request()
     .input("invite_id", sql.BigInt, invite_id)
     .query(`
-      SELECT si.*, b.display_name as baby_name, u.full_name as inviter_name
+      SELECT si.*, b.display_name as baby_name, u.full_name as inviter_name, r.role_name as invited_role_name
       FROM share_invites si
       LEFT JOIN babies b ON si.baby_id = b.baby_id
       LEFT JOIN users u ON si.inviter_user_id = u.user_id
+      LEFT JOIN roles r ON si.invited_role = r.role_id
       WHERE si.invite_id = @invite_id
     `);
 
@@ -69,10 +70,11 @@ export async function findInvitationByToken(
     .request()
     .input("token", sql.UniqueIdentifier, token)
     .query(`
-      SELECT si.*, b.display_name as baby_name, u.full_name as inviter_name
+      SELECT si.*, b.display_name as baby_name, u.full_name as inviter_name, r.role_name as invited_role_name
       FROM share_invites si
       LEFT JOIN babies b ON si.baby_id = b.baby_id
       LEFT JOIN users u ON si.inviter_user_id = u.user_id
+      LEFT JOIN roles r ON si.invited_role = r.role_id
       WHERE si.token = @token
     `);
 
@@ -91,9 +93,10 @@ export async function getPendingInvitations(
     .request()
     .input("baby_id", sql.BigInt, baby_id)
     .query(`
-      SELECT si.*, u.full_name as inviter_name
+      SELECT si.*, u.full_name as inviter_name, r.role_name as invited_role_name
       FROM share_invites si
       LEFT JOIN users u ON si.inviter_user_id = u.user_id
+      LEFT JOIN roles r ON si.invited_role = r.role_id
       WHERE si.baby_id = @baby_id
         AND si.accepted_at IS NULL
         AND si.expires_at > SYSDATETIME()
@@ -115,9 +118,10 @@ export async function getAllInvitations(
     .request()
     .input("baby_id", sql.BigInt, baby_id)
     .query(`
-      SELECT si.*, u.full_name as inviter_name
+      SELECT si.*, u.full_name as inviter_name, r.role_name as invited_role_name
       FROM share_invites si
       LEFT JOIN users u ON si.inviter_user_id = u.user_id
+      LEFT JOIN roles r ON si.invited_role = r.role_id
       WHERE si.baby_id = @baby_id
       ORDER BY si.expires_at DESC
     `);
@@ -177,12 +181,14 @@ export async function hasPendingInvitation(
  */
 export async function acceptInvitation(
   invite_id: number,
-  user_id: number
+  user_id: number,
+  transactionRequest?: sql.Request
 ): Promise<InvitationDTO | null> {
-  const db = await getDb();
+  const request = transactionRequest
+    ? transactionRequest
+    : (await getDb()).request();
 
-  const result = await db
-    .request()
+  const result = await request
     .input("invite_id", sql.BigInt, invite_id)
     .input("user_id", sql.BigInt, user_id)
     .query(`
@@ -191,6 +197,7 @@ export async function acceptInvitation(
       OUTPUT INSERTED.*
       WHERE invite_id = @invite_id
         AND accepted_at IS NULL
+        AND expires_at > SYSDATETIME()
     `);
 
   return result.recordset[0] || null;

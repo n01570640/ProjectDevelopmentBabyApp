@@ -7,8 +7,10 @@ import {
   InvitationResponseDTO,
   InvitationDetailsDTO,
 } from "../dtos/invitation.dto";
-import { AccessRole } from "../dtos/caregiver-access.dto";
 import { isExpired } from "../utils/token.util";
+import { getRolePermissions } from "../utils/role-permissions.util";
+import sql from "mssql";
+import { getDb } from "../db";
 
 /**
  * Create a new invitation
@@ -18,12 +20,6 @@ export async function createInvitation(
   inviterUserId: number,
   data: CreateInvitationDTO
 ): Promise<InvitationResponseDTO> {
-  // Check if user already has access to this baby
-  const existingAccess = await caregiverAccessModel.getUserBabyAccess(
-    0, // We need to find user by email first
-    babyId
-  );
-
   // Check if there's already a pending invitation
   const hasPending = await invitationModel.hasPendingInvitation(
     babyId,
@@ -81,102 +77,163 @@ export async function getInvitationByToken(
   return {
     baby_name: invitation.baby_name || "Unknown",
     inviter_name: invitation.inviter_name || "Unknown",
-    invited_role: invitation.invited_role,
+    invited_email: invitation.invited_email,
+    invited_role: invitation.invited_role_name ?? "",
     expires_at: invitation.expires_at,
     is_expired: isExpired(invitation.expires_at),
   };
 }
 
 /**
- * Accept an invitation
+ * Accept an invitation (API flow — authenticated user accepting via token)
+ * Throws on validation failures; returns baby_id on success.
  */
 export async function acceptInvitation(
   token: string,
   userId: number,
   userEmail: string
-): Promise<{ success: boolean; message: string; baby_id?: number }> {
+): Promise<{ baby_id: number }> {
   const invitation = await invitationModel.findInvitationByToken(token);
 
   if (!invitation) {
-    return { success: false, message: "Invitation not found" };
+    throw new Error("Invitation not found");
   }
 
-  // Check if already accepted
   if (invitation.accepted_at) {
-    return { success: false, message: "Invitation has already been accepted" };
+    throw new Error("Invitation has already been accepted");
   }
 
-  // Check if expired
   if (isExpired(invitation.expires_at)) {
-    return { success: false, message: "Invitation has expired" };
+    throw new Error("Invitation has expired");
   }
 
-  // Optionally verify email matches (can be relaxed based on requirements)
   if (invitation.invited_email.toLowerCase() !== userEmail.toLowerCase()) {
-    return {
-      success: false,
-      message: "This invitation was sent to a different email address",
-    };
+    throw new Error("This invitation was sent to a different email address");
   }
 
-  // Check if user already has access
   const existingAccess = await caregiverAccessModel.getUserBabyAccess(
     userId,
     invitation.baby_id
   );
 
   if (existingAccess) {
-    return { success: false, message: "You already have access to this baby" };
+    throw new Error("You already have access to this baby");
   }
 
-  // Determine permissions based on role
-  const permissions = getRolePermissions(invitation.invited_role as AccessRole);
+  const permissions = getRolePermissions(invitation.invited_role);
 
-  // Create caregiver access
-  await caregiverAccessModel.createCaregiverAccess({
-    baby_id: invitation.baby_id,
-    user_id: userId,
-    access_role: invitation.invited_role as AccessRole,
-    ...permissions,
-    invited_at: invitation.created_at,
-  });
+  const db = await getDb();
+  const transaction = new sql.Transaction(db);
 
-  // Mark invitation as accepted
-  await invitationModel.acceptInvitation(invitation.invite_id, userId);
+  try {
+    await transaction.begin();
 
-  return {
-    success: true,
-    message: "Invitation accepted successfully",
-    baby_id: invitation.baby_id,
-  };
+    await caregiverAccessModel.createCaregiverAccess(
+      {
+        baby_id: invitation.baby_id,
+        user_id: userId,
+        access_role: invitation.invited_role,
+        ...permissions,
+        invited_at: invitation.created_at,
+      },
+      new sql.Request(transaction)
+    );
+
+    await invitationModel.acceptInvitation(
+      invitation.invite_id,
+      userId,
+      new sql.Request(transaction)
+    );
+
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+
+  return { baby_id: invitation.baby_id };
 }
 
 /**
  * Cancel an invitation
+ * Throws on validation failures; returns void on success.
  */
 export async function cancelInvitation(
   inviteId: number,
-  userId: number
-): Promise<{ success: boolean; message: string }> {
+  userId: number,
+  babyId: number
+): Promise<void> {
   const invitation = await invitationModel.findInvitationById(inviteId);
 
-  if (!invitation) {
-    return { success: false, message: "Invitation not found" };
+  // Debug log — remove after confirming fix
+  console.log("cancelInvitation debug:", {
+    inviteId, babyId, userId,
+    found: !!invitation,
+    dbBabyId: invitation?.baby_id, dbBabyIdType: typeof invitation?.baby_id,
+    dbInviterId: invitation?.inviter_user_id, dbInviterType: typeof invitation?.inviter_user_id,
+  });
+
+  if (!invitation || Number(invitation.baby_id) !== Number(babyId)) {
+    throw new Error("Invitation not found");
   }
 
-  // Only the inviter can cancel
-  if (invitation.inviter_user_id !== userId) {
-    return { success: false, message: "Only the inviter can cancel this invitation" };
+  if (Number(invitation.inviter_user_id) !== Number(userId)) {
+    throw new Error("Only the inviter can cancel this invitation");
   }
 
-  // Cannot cancel accepted invitations
   if (invitation.accepted_at) {
-    return { success: false, message: "Cannot cancel an accepted invitation" };
+    throw new Error("Cannot cancel an accepted invitation");
   }
 
   await invitationModel.deleteInvitation(inviteId);
+}
 
-  return { success: true, message: "Invitation cancelled successfully" };
+/**
+ * Accept an invitation by token during registration flow.
+ * Throws on validation failures (not found, expired, email mismatch).
+ */
+export async function acceptInvitationByToken(
+  userId: number,
+  email: string,
+  invitationToken: string,
+  transaction?: sql.Transaction
+): Promise<void> {
+  const invite = await invitationModel.findInvitationByToken(invitationToken);
+
+  if (!invite) {
+    throw new Error("Invitation token not found");
+  }
+
+  if (invite.accepted_at) {
+    throw new Error("Invitation has already been accepted");
+  }
+
+  if (isExpired(invite.expires_at)) {
+    throw new Error("Invitation has expired");
+  }
+
+  if (invite.invited_email.toLowerCase() !== email.toLowerCase()) {
+    throw new Error("Registration email does not match invitation email");
+  }
+
+  const permissions = getRolePermissions(invite.invited_role);
+
+  await caregiverAccessModel.createCaregiverAccess(
+    {
+      baby_id: invite.baby_id,
+      user_id: userId,
+      access_role: invite.invited_role,
+      ...permissions,
+      invited_at: invite.created_at,
+    },
+    transaction ? new sql.Request(transaction) : undefined
+  );
+
+  await invitationModel.acceptInvitation(
+    invite.invite_id,
+    userId,
+    transaction ? new sql.Request(transaction) : undefined
+  );
 }
 
 /**
@@ -187,7 +244,7 @@ function formatInvitationResponse(invitation: InvitationDTO): InvitationResponse
     invite_id: invitation.invite_id,
     baby_id: invitation.baby_id,
     invited_email: invitation.invited_email,
-    invited_role: invitation.invited_role,
+    invited_role: invitation.invited_role_name ?? "",
     token: invitation.token,
     expires_at: invitation.expires_at,
     is_expired: isExpired(invitation.expires_at),
@@ -196,32 +253,3 @@ function formatInvitationResponse(invitation: InvitationDTO): InvitationResponse
   };
 }
 
-/**
- * Get default permissions for a role
- */
-function getRolePermissions(role: AccessRole): {
-  can_edit_health: boolean;
-  can_edit_activities: boolean;
-  can_share: boolean;
-} {
-  switch (role) {
-    case AccessRole.SECONDARY_CAREGIVER:
-      return {
-        can_edit_health: true,
-        can_edit_activities: true,
-        can_share: false,
-      };
-    case AccessRole.PROFESSIONAL:
-      return {
-        can_edit_health: true,
-        can_edit_activities: false,
-        can_share: false,
-      };
-    default:
-      return {
-        can_edit_health: false,
-        can_edit_activities: false,
-        can_share: false,
-      };
-  }
-}

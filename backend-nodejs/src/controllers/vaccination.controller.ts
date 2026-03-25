@@ -14,6 +14,11 @@ export async function createVaccination(
     const userId = req.user?.user_id;
     const babyId = parseInt(req.params.babyId, 10);
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     if (!userId) {
       res.status(401).json({
         success: false,
@@ -44,7 +49,7 @@ export async function createVaccination(
   } catch (error: any) {
     console.error("Error creating vaccination:", error);
 
-    if (error.message === "Invalid vaccine ID") {
+    if (error.message?.includes("Invalid vaccine ID")) {
       res.status(400).json({
         success: false,
         message: error.message,
@@ -69,6 +74,11 @@ export async function listVaccinations(
 ): Promise<void> {
   try {
     const babyId = parseInt(req.params.babyId, 10);
+
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
 
     const vaccinations = await vaccinationService.getBabyVaccinations(babyId);
 
@@ -100,19 +110,12 @@ export async function getVaccination(
     const babyId = parseInt(req.params.babyId, 10);
     const vaccinationId = parseInt(req.params.vaccinationId, 10);
 
-    // Verify vaccination belongs to baby
-    const belongsToBaby = await vaccinationService.vaccinationBelongsToBaby(
-      vaccinationId,
-      babyId
-    );
-
-    if (!belongsToBaby) {
-      res.status(404).json({
-        success: false,
-        message: "Vaccination not found",
-      });
+    if (isNaN(babyId) || isNaN(vaccinationId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or vaccination ID" });
       return;
     }
+
+    await vaccinationService.assertVaccinationBelongsToBaby(vaccinationId, babyId);
 
     const vaccination = await vaccinationService.getVaccination(vaccinationId);
 
@@ -130,6 +133,12 @@ export async function getVaccination(
     });
   } catch (error: any) {
     console.error("Error getting vaccination:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to get vaccination",
@@ -149,19 +158,12 @@ export async function updateVaccination(
     const babyId = parseInt(req.params.babyId, 10);
     const vaccinationId = parseInt(req.params.vaccinationId, 10);
 
-    // Verify vaccination belongs to baby
-    const belongsToBaby = await vaccinationService.vaccinationBelongsToBaby(
-      vaccinationId,
-      babyId
-    );
-
-    if (!belongsToBaby) {
-      res.status(404).json({
-        success: false,
-        message: "Vaccination not found",
-      });
+    if (isNaN(babyId) || isNaN(vaccinationId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or vaccination ID" });
       return;
     }
+
+    await vaccinationService.assertVaccinationBelongsToBaby(vaccinationId, babyId);
 
     const data: UpdateVaccinationDTO = {};
     if (req.body.vaccine_id !== undefined) data.vaccine_id = req.body.vaccine_id;
@@ -191,7 +193,12 @@ export async function updateVaccination(
   } catch (error: any) {
     console.error("Error updating vaccination:", error);
 
-    if (error.message === "Invalid vaccine ID") {
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
+    if (error.message?.includes("Invalid vaccine ID")) {
       res.status(400).json({
         success: false,
         message: error.message,
@@ -218,19 +225,12 @@ export async function deleteVaccination(
     const babyId = parseInt(req.params.babyId, 10);
     const vaccinationId = parseInt(req.params.vaccinationId, 10);
 
-    // Verify vaccination belongs to baby
-    const belongsToBaby = await vaccinationService.vaccinationBelongsToBaby(
-      vaccinationId,
-      babyId
-    );
-
-    if (!belongsToBaby) {
-      res.status(404).json({
-        success: false,
-        message: "Vaccination not found",
-      });
+    if (isNaN(babyId) || isNaN(vaccinationId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or vaccination ID" });
       return;
     }
+
+    await vaccinationService.assertVaccinationBelongsToBaby(vaccinationId, babyId);
 
     const deleted = await vaccinationService.deleteVaccination(vaccinationId);
 
@@ -248,6 +248,12 @@ export async function deleteVaccination(
     });
   } catch (error: any) {
     console.error("Error deleting vaccination:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({ success: false, message: error.message });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to delete vaccination",

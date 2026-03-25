@@ -17,8 +17,8 @@ export const emailValidator = body("email")
 export const passwordValidator = body("password")
   .notEmpty()
   .withMessage("Password is required")
-  .isLength({ min: 8 })
-  .withMessage("Password must be at least 8 characters");
+  .isLength({ min: 8, max: 128 })
+  .withMessage("Password must be between 8 and 128 characters");
 
 // Required string validator factory
 export const requiredString = (field: string, maxLength: number = 200) =>

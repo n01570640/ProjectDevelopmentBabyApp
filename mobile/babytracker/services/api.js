@@ -7,7 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // =========================================================
 
 // Your machine's IPv4 (for physical devices on same WiFi)
-const LOCAL_IPV4 = "192.168.56.1";
+const LOCAL_IPV4 = "192.168.2.37";
 
 // Determine which BASE URL to use
 const getApiBaseUrl = () => {
@@ -30,8 +30,6 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
-console.log("[API] Base URL:", API_BASE_URL);
-console.log("[API] Platform:", Platform.OS, "| isDevice:", Constants.isDevice);
 
 // =========================================================
 // HTTP CLIENT
@@ -44,7 +42,6 @@ const apiClient = {
       const token = await AsyncStorage.getItem("authToken");
       return token ? { Authorization: `Bearer ${token}` } : {};
     } catch (error) {
-      console.error("Failed to get auth token:", error);
       return {};
     }
   },
@@ -64,8 +61,7 @@ const apiClient = {
 
       if (!response.ok) {
         const responseBody = await response.json().catch(() => ({}));
-        const errorMessage =
-          responseBody.message || `API Error: ${response.status}`;
+        const errorMessage = responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
@@ -74,14 +70,13 @@ const apiClient = {
 
       return await response.json();
     } catch (error) {
-      console.error(`GET ${endpoint} failed:`, error);
       throw error;
     }
   },
 
   async post(endpoint, data) {
     const url = `${API_BASE_URL}${endpoint}`;
-    console.log(`[API] POST ${url}`, JSON.stringify(data));
+    console.log(`[API] POST ${url}`);
     try {
       const authHeaders = await this.getAuthHeaders();
       const response = await fetch(url, {
@@ -94,7 +89,6 @@ const apiClient = {
       });
 
       const responseBody = await response.json();
-      console.log(`[API] POST ${endpoint} response:`, response.status);
 
       if (!response.ok) {
         // Extract error message from backend response
@@ -108,12 +102,12 @@ const apiClient = {
 
       return responseBody;
     } catch (error) {
-      console.error(`[API] POST ${endpoint} failed:`, error.message || error);
       throw error;
     }
   },
 
   async put(endpoint, data) {
+    console.log(`[API] PUT ${API_BASE_URL}${endpoint}`);
     try {
       const authHeaders = await this.getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -128,8 +122,7 @@ const apiClient = {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        const errorMessage =
-          responseBody.message || `API Error: ${response.status}`;
+        const errorMessage = responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
@@ -138,12 +131,12 @@ const apiClient = {
 
       return responseBody;
     } catch (error) {
-      console.error(`PUT ${endpoint} failed:`, error);
       throw error;
     }
   },
 
   async delete(endpoint) {
+    console.log(`[API] DELETE ${API_BASE_URL}${endpoint}`);
     try {
       const authHeaders = await this.getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -157,8 +150,7 @@ const apiClient = {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        const errorMessage =
-          responseBody.message || `API Error: ${response.status}`;
+        const errorMessage = responseBody.message || `API Error: ${response.status}`;
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = responseBody;
@@ -167,7 +159,6 @@ const apiClient = {
 
       return responseBody;
     } catch (error) {
-      console.error(`DELETE ${endpoint} failed:`, error);
       throw error;
     }
   },

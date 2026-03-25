@@ -1,7 +1,8 @@
 import express from "express";
 import * as invitationController from "../controllers/invitation.controller";
+import * as caregiverController from "../controllers/caregiver.controller";
 import { verifyTokenMiddleware } from "../middleware/auth.middleware";
-import { requireBabyAccess, requirePermission } from "../middleware/rbac.middleware";
+import { requireBabyAccess, requirePermission, requirePrimaryCaregiver } from "../middleware/rbac.middleware";
 import { validate } from "../middleware/validation.middleware";
 import {
   createInvitationValidator,
@@ -10,6 +11,10 @@ import {
   getInvitationByTokenValidator,
   acceptInvitationValidator,
 } from "../validators/invitation.validator";
+import {
+  listCaregiversValidator,
+  removeCaregiverValidator,
+} from "../validators/caregiver.validator";
 
 const router = express.Router();
 
@@ -69,6 +74,31 @@ router.post(
   acceptInvitationValidator,
   validate,
   invitationController.acceptInvitation
+);
+
+// ---------------------------------------------------------
+// Caregiver management routes (baby-scoped)
+// ---------------------------------------------------------
+
+// GET /api/v1/babies/:babyId/caregivers - List caregivers
+router.get(
+  "/babies/:babyId/caregivers",
+  verifyTokenMiddleware,
+  listCaregiversValidator,
+  validate,
+  requireBabyAccess,
+  caregiverController.listCaregivers
+);
+
+// DELETE /api/v1/babies/:babyId/caregivers/:userId - Remove caregiver
+router.delete(
+  "/babies/:babyId/caregivers/:userId",
+  verifyTokenMiddleware,
+  removeCaregiverValidator,
+  validate,
+  requireBabyAccess,
+  requirePrimaryCaregiver,
+  caregiverController.removeCaregiver
 );
 
 export default router;

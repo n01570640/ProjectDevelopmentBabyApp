@@ -11,12 +11,6 @@ export interface VaccineDTO {
   notes: string;
 }
 
-// Response for listing vaccines
-export interface VaccineListResponseDTO {
-  vaccines: VaccineDTO[];
-  total: number;
-}
-
 /**
  * Convert weeks to human-readable age
  */
@@ -29,7 +23,7 @@ export function weeksToAgeDisplay(weeks: number): string {
     return `${weeks} week${weeks > 1 ? "s" : ""}`;
   }
 
-  const months = Math.floor(weeks / 4);
+  const months = Math.round(weeks / 4.345);
   const remainingWeeks = weeks % 4;
 
   if (months < 12) {

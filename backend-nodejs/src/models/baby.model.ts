@@ -1,20 +1,25 @@
 import { getDb } from "../db";
 import sql from "mssql";
 import { BabyDTO, CreateBabyDTO, UpdateBabyDTO, BabyWithAccessDTO, BabyWithDetailsDTO } from "../dtos/baby.dto";
+import { ROLE_PRIMARY } from "../dtos/caregiver-access.dto";
 
 /**
  * Create a new baby
  */
-export async function createBaby(data: CreateBabyDTO): Promise<BabyDTO> {
-  const db = await getDb();
+export async function createBaby(
+  data: CreateBabyDTO,
+  transactionRequest?: sql.Request
+): Promise<BabyDTO> {
+  const request = transactionRequest
+    ? transactionRequest
+    : (await getDb()).request();
 
-  const result = await db
-    .request()
+  const result = await request
     .input("display_name", sql.NVarChar(200), data.display_name)
     .input("date_of_birth", sql.Date, data.date_of_birth)
-    .input("sex", sql.VarChar(10), data.sex || null)
-    .input("blood_type", sql.VarChar(3), data.blood_type || null)
-    .input("notes", sql.NVarChar, data.notes || null)
+    .input("sex", sql.VarChar(10), data.sex ?? null)
+    .input("blood_type", sql.VarChar(3), data.blood_type ?? null)
+    .input("notes", sql.NVarChar, data.notes ?? null)
     .query(`
       INSERT INTO babies (display_name, date_of_birth, sex, blood_type, notes, created_at)
       OUTPUT INSERTED.*
@@ -52,9 +57,10 @@ export async function findBabiesByUserId(
     .query(`
       SELECT
         b.baby_id, b.display_name, b.date_of_birth, b.sex, b.blood_type, b.notes, b.created_at,
-        cba.access_role, cba.can_edit_health, cba.can_edit_activities, cba.can_share
+        r.role_name AS access_role, cba.can_edit_health, cba.can_edit_activities, cba.can_share
       FROM babies b
       INNER JOIN caregiver_baby_access cba ON b.baby_id = cba.baby_id
+      INNER JOIN roles r ON cba.access_role = r.role_id
       WHERE cba.user_id = @user_id
       ORDER BY b.created_at DESC
     `);
@@ -121,18 +127,21 @@ export async function deleteBaby(baby_id: number): Promise<boolean> {
   try {
     await transaction.begin();
 
-    const relatedTables = [
-      "share_invites",
-      "baby_vaccinations",
-      "growth_metrics",
-      "caregiver_baby_access",
-    ];
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM share_invites WHERE baby_id = @baby_id`);
 
-    for (const table of relatedTables) {
-      await new sql.Request(transaction)
-        .input("baby_id", sql.BigInt, baby_id)
-        .query(`DELETE FROM ${table} WHERE baby_id = @baby_id`);
-    }
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM baby_vaccinations WHERE baby_id = @baby_id`);
+
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM growth_metrics WHERE baby_id = @baby_id`);
+
+    await new sql.Request(transaction)
+      .input("baby_id", sql.BigInt, baby_id)
+      .query(`DELETE FROM caregiver_baby_access WHERE baby_id = @baby_id`);
 
     const result = await new sql.Request(transaction)
       .input("baby_id", sql.BigInt, baby_id)
@@ -157,10 +166,11 @@ export async function findBabiesWithDetailsByUserId(
   const result = await db
     .request()
     .input("user_id", sql.BigInt, userId)
+    .input("role_primary", sql.Int, ROLE_PRIMARY)
     .query(`
       SELECT
         b.baby_id, b.display_name, b.date_of_birth, b.sex, b.blood_type, b.notes, b.created_at,
-        cba.access_role, cba.can_edit_health, cba.can_edit_activities, cba.can_share,
+        r.role_name AS access_role, cba.can_edit_health, cba.can_edit_activities, cba.can_share,
         lg.weight_kg AS latest_weight_kg,
         lg.length_cm AS latest_length_cm,
         lg.head_circum_cm AS latest_head_circum_cm,
@@ -168,6 +178,7 @@ export async function findBabiesWithDetailsByUserId(
         pc.full_name AS primary_caregiver_name
       FROM babies b
       INNER JOIN caregiver_baby_access cba ON b.baby_id = cba.baby_id
+      INNER JOIN roles r ON cba.access_role = r.role_id
       -- Latest growth metrics (subquery to get most recent record per baby)
       LEFT JOIN (
         SELECT gm.baby_id, gm.weight_kg, gm.length_cm, gm.head_circum_cm, gm.recorded_at
@@ -180,7 +191,7 @@ export async function findBabiesWithDetailsByUserId(
       ) lg ON b.baby_id = lg.baby_id
       -- Primary caregiver name
       LEFT JOIN caregiver_baby_access pc_access
-        ON b.baby_id = pc_access.baby_id AND pc_access.access_role = 'PRIMARY_CAREGIVER'
+        ON b.baby_id = pc_access.baby_id AND pc_access.access_role = @role_primary
       LEFT JOIN users pc ON pc_access.user_id = pc.user_id
       WHERE cba.user_id = @user_id
       ORDER BY b.created_at DESC
@@ -222,10 +233,11 @@ export async function findBabyWithDetailsById(
     .request()
     .input("baby_id", sql.BigInt, babyId)
     .input("user_id", sql.BigInt, userId)
+    .input("role_primary", sql.Int, ROLE_PRIMARY)
     .query(`
       SELECT
         b.baby_id, b.display_name, b.date_of_birth, b.sex, b.blood_type, b.notes, b.created_at,
-        cba.access_role, cba.can_edit_health, cba.can_edit_activities, cba.can_share,
+        r.role_name AS access_role, cba.can_edit_health, cba.can_edit_activities, cba.can_share,
         lg.weight_kg AS latest_weight_kg,
         lg.length_cm AS latest_length_cm,
         lg.head_circum_cm AS latest_head_circum_cm,
@@ -233,6 +245,7 @@ export async function findBabyWithDetailsById(
         pc.full_name AS primary_caregiver_name
       FROM babies b
       INNER JOIN caregiver_baby_access cba ON b.baby_id = cba.baby_id AND cba.user_id = @user_id
+      INNER JOIN roles r ON cba.access_role = r.role_id
       -- Latest growth metrics
       LEFT JOIN (
         SELECT gm.baby_id, gm.weight_kg, gm.length_cm, gm.head_circum_cm, gm.recorded_at
@@ -245,7 +258,7 @@ export async function findBabyWithDetailsById(
       ) lg ON b.baby_id = lg.baby_id
       -- Primary caregiver name
       LEFT JOIN caregiver_baby_access pc_access
-        ON b.baby_id = pc_access.baby_id AND pc_access.access_role = 'PRIMARY_CAREGIVER'
+        ON b.baby_id = pc_access.baby_id AND pc_access.access_role = @role_primary
       LEFT JOIN users pc ON pc_access.user_id = pc.user_id
       WHERE b.baby_id = @baby_id
     `);

@@ -17,16 +17,17 @@ Express.js REST API built with TypeScript for the Baby Tracking Application.
 ```
 backend-nodejs/
 ├── src/
-│   ├── controllers/     # Route handlers
-│   ├── data/            # Hardcoded reference data (vaccine catalog)
-│   ├── dtos/            # Data transfer objects / interfaces
+│   ├── controllers/     # Route handlers (13 files)
+│   ├── data/            # Hardcoded reference data (vaccines, symptoms catalogs)
+│   ├── dtos/            # Data transfer objects / interfaces (14 files)
+│   ├── jobs/            # Scheduled tasks (reminder notification cron)
 │   ├── middleware/       # Auth, RBAC, validation
-│   ├── models/          # Database queries
-│   ├── routes/          # API route definitions
+│   ├── models/          # Database queries (13 files)
+│   ├── routes/          # API route definitions (13 files)
 │   ├── scripts/         # Seed and cleanup scripts
-│   ├── services/        # Business logic
-│   ├── utils/           # Helper functions (JWT, tokens)
-│   ├── validators/      # Request validation rules
+│   ├── services/        # Business logic (12 files)
+│   ├── utils/           # Helper functions (JWT, tokens, Expo Push)
+│   ├── validators/      # Request validation rules (13 files)
 │   ├── db.ts            # Database connection
 │   └── server.ts        # Entry point
 ├── package.json
@@ -89,11 +90,15 @@ npx ts-node src/scripts/cleanup-orphaned-babies.ts
 
 ### Roles
 
-| Role                  | Description                                                             |
-|-----------------------|-------------------------------------------------------------------------|
-| `PRIMARY_CAREGIVER`   | Baby creator. Full permissions including sharing and deleting the baby. |
-| `SECONDARY_CAREGIVER` | Invited caregiver. Can edit health and activities. Cannot share.        |
-| `PROFESSIONAL`        | Healthcare professional. Can edit health data only. Cannot share.       |
+Roles are stored in the `roles` database table and referenced by ID throughout the backend. The `caregiver_baby_access.access_role` and `share_invites.invited_role` columns are integer foreign keys to `roles.role_id`.
+
+| Role ID | Role Name             | Description                                                             |
+|---------|-----------------------|-------------------------------------------------------------------------|
+| 1       | `PRIMARY_CAREGIVER`   | Baby creator. Full permissions including sharing and deleting the baby. |
+| 2       | `SECONDARY_CAREGIVER` | Invited caregiver. Can edit health and activities. Cannot share.        |
+| 3       | `PROFESSIONAL`        | Healthcare professional. Can edit health data only. Cannot share.       |
+
+Role ID constants are defined in `src/dtos/caregiver-access.dto.ts` (`ROLE_PRIMARY`, `ROLE_SECONDARY`, `ROLE_PROFESSIONAL`). API responses return the role name string (e.g. `"PRIMARY_CAREGIVER"`) via JOIN to the `roles` table, so frontend consumers receive human-readable role names.
 
 ### Permissions
 
@@ -188,11 +193,11 @@ All routes require authentication. `:babyId` must be a positive integer.
 ```json
 {
   "invited_email": "caregiver@example.com",
-  "invited_role": "SECONDARY_CAREGIVER"
+  "invited_role": 2
 }
 ```
 
-Valid roles: `SECONDARY_CAREGIVER`, `PROFESSIONAL`
+Valid role IDs: `2` (SECONDARY_CAREGIVER), `3` (PROFESSIONAL)
 
 ### Vaccinations
 
@@ -228,6 +233,126 @@ All routes require authentication. Read-only reference data.
 | GET    | `/guidelines/vaccines`                    | List all 30 CDC-recommended vaccines         |
 | GET    | `/guidelines/vaccines/:vaccineId`         | Get specific vaccine details                 |
 | GET    | `/guidelines/vaccines/schedule/:ageWeeks` | Get vaccines due/upcoming for age (in weeks) |
+
+### Activities
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                    | Permission            | Description        |
+|--------|---------------------------------------------|-----------------------|--------------------|
+| POST   | `/babies/:babyId/activities`                | `can_edit_activities` | Log an activity    |
+| GET    | `/babies/:babyId/activities`                | Baby access           | List activities    |
+| GET    | `/babies/:babyId/activities/:activityId`    | Baby access           | Get activity       |
+| PUT    | `/babies/:babyId/activities/:activityId`    | `can_edit_activities` | Update activity    |
+| DELETE | `/babies/:babyId/activities/:activityId`    | `can_edit_activities` | Delete activity    |
+
+### Tasks
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                          | Permission  | Description  |
+|--------|-----------------------------------|-------------|--------------|
+| POST   | `/babies/:babyId/tasks`           | Baby access | Create task  |
+| GET    | `/babies/:babyId/tasks`           | Baby access | List tasks   |
+| GET    | `/babies/:babyId/tasks/:taskId`   | Baby access | Get task     |
+| PUT    | `/babies/:babyId/tasks/:taskId`   | Baby access | Update task  |
+| DELETE | `/babies/:babyId/tasks/:taskId`   | Baby access | Delete task  |
+
+### Reminders
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                  | Permission  | Description     |
+|--------|-------------------------------------------|-------------|-----------------|
+| POST   | `/babies/:babyId/reminders`               | Baby access | Create reminder |
+| GET    | `/babies/:babyId/reminders`               | Baby access | List reminders  |
+| GET    | `/babies/:babyId/reminders/:reminderId`   | Baby access | Get reminder    |
+| PUT    | `/babies/:babyId/reminders/:reminderId`   | Baby access | Update reminder |
+| DELETE | `/babies/:babyId/reminders/:reminderId`   | Baby access | Delete reminder |
+
+### Symptoms Catalog
+
+Read-only reference data. All routes require authentication.
+
+| Method | Endpoint            | Description                       |
+|--------|---------------------|-----------------------------------|
+| GET    | `/symptoms`         | List all 15 common baby symptoms  |
+| GET    | `/symptoms/:code`   | Get symptom by code (e.g. FEVER)  |
+
+### Symptom Logs
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                          | Permission        | Description                         |
+|--------|---------------------------------------------------|-------------------|-------------------------------------|
+| POST   | `/babies/:babyId/symptoms`                        | `can_edit_health` | Log a symptom                       |
+| GET    | `/babies/:babyId/symptoms`                        | Baby access       | List symptom logs (filterable)      |
+| GET    | `/babies/:babyId/symptoms/:symptomLogId`          | Baby access       | Get specific symptom log            |
+| PUT    | `/babies/:babyId/symptoms/:symptomLogId`          | `can_edit_health` | Update symptom log                  |
+| DELETE | `/babies/:babyId/symptoms/:symptomLogId`          | `can_edit_health` | Delete symptom log                  |
+
+**Query filters for GET list:**
+- `?from=2026-01-01` - Filter from date (ISO 8601)
+- `?to=2026-03-01` - Filter to date
+- `?symptom_code=FEVER` - Filter by symptom
+
+### Medications
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                                          | Permission        | Description       |
+|--------|---------------------------------------------------|-------------------|-------------------|
+| POST   | `/babies/:babyId/medications`                     | `can_edit_health` | Add medication    |
+| GET    | `/babies/:babyId/medications`                     | Baby access       | List medications  |
+| GET    | `/babies/:babyId/medications/:medicationId`       | Baby access       | Get medication    |
+| PUT    | `/babies/:babyId/medications/:medicationId`       | `can_edit_health` | Update medication |
+| DELETE | `/babies/:babyId/medications/:medicationId`       | `can_edit_health` | Delete medication |
+
+### Analytics
+
+All routes require authentication and baby access.
+
+| Method | Endpoint                              | Description                                    |
+|--------|---------------------------------------|------------------------------------------------|
+| GET    | `/analytics/baby/:babyId/summary`     | Dashboard summary (counts, latest growth, etc) |
+| GET    | `/analytics/baby/:babyId/graphs`      | Graph data (growth trends, activity/symptom frequency) |
+
+### Notifications
+
+All routes require authentication.
+
+| Method | Endpoint                            | Description                     |
+|--------|-------------------------------------|---------------------------------|
+| POST   | `/notifications/register-token`     | Register Expo push token        |
+| POST   | `/notifications/unregister-token`   | Unregister push token (logout)  |
+| GET    | `/notifications`                    | Get notification history        |
+
+## Notification System
+
+Push notifications are sent automatically when reminders come due.
+
+**Architecture:** Expo Push Notifications + Firebase Cloud Messaging (FCM) + node-cron scheduler
+
+```
+Cron (every min) → due reminders → Expo Push API → FCM → Android device
+                                        ↓
+                              notifications_log table
+```
+
+- A cron job runs every minute checking for due reminders
+- Sends push notifications via Expo Push API to all caregivers with access to the baby
+- One-time reminders (no `rrule`) are deactivated after firing
+- Recurring reminders (`rrule` in RFC 5545 format) stay active
+- All send attempts are logged in `notifications_log` with `DELIVERED` or `FAILED` status
+- 1-minute anti-spam window prevents duplicate sends
+
+**Prerequisites (already configured):**
+- Firebase project with Android app (`com.n01570640.babytracker`)
+- `google-services.json` placed in `mobile/babytracker/android/app/`
+- FCM V1 service account key uploaded to Expo via `eas credentials -p android`
+- Google services Gradle plugin configured in Android build files
+
+**Frontend integration:** The mobile app calls `POST /notifications/register-token` after login/registration with the Expo push token. Notifications only work with `npx expo run:android` (not Expo Go, which dropped push support in SDK 53).
 
 ## Input Validation
 

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import * as caregiverAccessModel from "../models/caregiver-access.model";
-import { Permission, AccessRole, CaregiverAccessDTO } from "../dtos/caregiver-access.dto";
+import { Permission, ROLE_PRIMARY, CaregiverAccessDTO } from "../dtos/caregiver-access.dto";
 
 // Extend Express Request to include baby access info
 declare global {
@@ -55,6 +55,7 @@ export async function requireBabyAccess(
     req.babyAccess = access;
     next();
   } catch (error: any) {
+    console.error("Error checking baby access:", error);
     res.status(500).json({
       success: false,
       message: "Error checking baby access",
@@ -81,7 +82,7 @@ export function requirePermission(permission: Permission) {
         } else {
           res.status(403).json({
             success: false,
-            message: `You do not have ${permission.replace("_", " ")} permission`,
+            message: `You do not have ${permission.replace(/_/g, " ")} permission`,
           });
           return;
         }
@@ -108,13 +109,14 @@ export function requirePermission(permission: Permission) {
       if (!hasPermission) {
         res.status(403).json({
           success: false,
-          message: `You do not have ${permission.replace("_", " ")} permission`,
+          message: `You do not have ${permission.replace(/_/g, " ")} permission`,
         });
         return;
       }
 
       next();
     } catch (error: any) {
+      console.error("Error checking permission:", error);
       res.status(500).json({
         success: false,
         message: "Error checking permission",
@@ -135,7 +137,7 @@ export async function requirePrimaryCaregiver(
   try {
     // If babyAccess is already attached, use it
     if (req.babyAccess) {
-      if (req.babyAccess.access_role === AccessRole.PRIMARY_CAREGIVER) {
+      if (req.babyAccess.access_role === ROLE_PRIMARY) {
         next();
         return;
       } else {
@@ -174,6 +176,7 @@ export async function requirePrimaryCaregiver(
 
     next();
   } catch (error: any) {
+    console.error("Error checking caregiver status:", error);
     res.status(500).json({
       success: false,
       message: "Error checking caregiver status",
@@ -203,7 +206,15 @@ export function requireCreator(creatorField: string = "created_by") {
         return;
       }
 
-      if (resourceCreatorId && resourceCreatorId !== userId) {
+      if (!resourceCreatorId) {
+        res.status(500).json({
+          success: false,
+          message: "Cannot verify resource ownership",
+        });
+        return;
+      }
+
+      if (resourceCreatorId !== userId) {
         res.status(403).json({
           success: false,
           message: "Only the creator can perform this action",
@@ -213,6 +224,7 @@ export function requireCreator(creatorField: string = "created_by") {
 
       next();
     } catch (error: any) {
+      console.error("Error checking creator status:", error);
       res.status(500).json({
         success: false,
         message: "Error checking creator status",

@@ -7,21 +7,16 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
-  Dimensions,
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { createBaby } from "../../services/babyService";
-
-const { width, height } = Dimensions.get("window");
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors } from "../theme/colors";
 
 type Props = {
   navigation: any;
@@ -32,12 +27,15 @@ type SexOption = "male" | "female" | null;
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 export default function AddChildScreen({ navigation }: Props) {
+  const dispatch = useAppDispatch();
+  const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState<SexOption>(null);
   const [bloodType, setBloodType] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // ── Format DOB input as YYYY-MM-DD automatically
   const handleDobChange = (text: string) => {
@@ -54,22 +52,23 @@ export default function AddChildScreen({ navigation }: Props) {
 
   const validate = (): boolean => {
     if (!displayName.trim()) {
-      Alert.alert("Validation", "Please enter the baby's name.");
+      setFeedback({ type: "error", message: "Please enter the baby's name." });
       return false;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
-      Alert.alert("Validation", "Please enter a valid date (YYYY-MM-DD).");
+      setFeedback({ type: "error", message: "Please enter a valid date (YYYY-MM-DD)." });
       return false;
     }
     const parsed = new Date(dateOfBirth);
     if (isNaN(parsed.getTime()) || parsed > new Date()) {
-      Alert.alert("Validation", "Date of birth cannot be in the future.");
+      setFeedback({ type: "error", message: "Date of birth cannot be in the future." });
       return false;
     }
     return true;
   };
 
   const handleSave = async () => {
+    setFeedback(null);
     if (!validate()) return;
     setSaving(true);
     try {
@@ -82,24 +81,14 @@ export default function AddChildScreen({ navigation }: Props) {
       });
 
       if (response.success) {
-        Alert.alert(
-          "Success 🎉",
-          `${displayName.trim()} has been added!`,
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                // Go back — Children screen will re-fetch on focus
-                navigation.goBack();
-              },
-            },
-          ]
-        );
+        dispatch(fetchBabies());
+        setFeedback({ type: "success", message: "Baby added successfully!" });
+        setTimeout(() => navigation.goBack(), 2000);
       } else {
-        Alert.alert("Error", response.message || "Failed to add baby.");
+        setFeedback({ type: "error", message: response.message || "Failed to add baby." });
       }
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Something went wrong.");
+      setFeedback({ type: "error", message: e?.message ?? "Something went wrong." });
     } finally {
       setSaving(false);
     }
@@ -112,7 +101,7 @@ export default function AddChildScreen({ navigation }: Props) {
         colors={["#c9e8f9", "#e8f4fd"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top + 10 }]}
       >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={moderateScale(24)} color="#1a3d5c" />
@@ -130,10 +119,18 @@ export default function AddChildScreen({ navigation }: Props) {
         {/* Avatar placeholder */}
         <View style={styles.avatarWrap}>
           <View style={styles.avatar}>
-            <Ionicons name="person-add-outline" size={moderateScale(48)} color="#81b6eb" />
+            <Ionicons name="person-add-outline" size={moderateScale(48)} color={colors.primary} />
           </View>
           <Text style={styles.avatarHint}>Fill in the details below</Text>
         </View>
+
+        {feedback && (
+          <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+            <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+              {feedback.message}
+            </Text>
+          </View>
+        )}
 
         {/* ── Name ── */}
         <View style={styles.fieldGroup}>
@@ -178,7 +175,7 @@ export default function AddChildScreen({ navigation }: Props) {
                 <Ionicons
                   name={s === "male" ? "male-outline" : "female-outline"}
                   size={moderateScale(16)}
-                  color={sex === s ? "#fff" : "#4A90D9"}
+                  color={sex === s ? "#fff" : colors.primaryDark}
                   style={{ marginRight: 5 }}
                 />
                 <Text style={[styles.chipText, sex === s && styles.chipTextActive]}>
@@ -261,7 +258,6 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    paddingTop: Platform.OS === "android" ? verticalScale(40) : verticalScale(54),
     paddingBottom: verticalScale(16),
     paddingHorizontal: scale(20),
     flexDirection: "row",
@@ -301,7 +297,7 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(50),
     backgroundColor: "#eaf3fb",
     borderWidth: 2,
-    borderColor: "#81b6eb",
+    borderColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: verticalScale(10),
@@ -349,19 +345,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1.5,
-    borderColor: "#4A90D9",
+    borderColor: colors.primaryDark,
     borderRadius: 20,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(7),
     backgroundColor: "#eaf3fb",
   },
   chipActive: {
-    backgroundColor: "#4A90D9",
-    borderColor: "#4A90D9",
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
   },
   chipText: {
     fontSize: moderateScale(13),
-    color: "#4A90D9",
+    color: colors.primaryDark,
     fontWeight: "600",
   },
   chipTextActive: {
@@ -374,11 +370,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: scale(8),
-    backgroundColor: "#4A90D9",
+    backgroundColor: colors.primaryDark,
     borderRadius: 14,
     paddingVertical: verticalScale(15),
     marginTop: verticalScale(10),
-    shadowColor: "#4A90D9",
+    shadowColor: colors.primaryDark,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -388,6 +384,36 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(16),
     fontWeight: "800",
     color: "#fff",
+  },
+
+  // Feedback banners
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
   },
 });
 

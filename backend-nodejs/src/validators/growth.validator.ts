@@ -10,8 +10,8 @@ export const createGrowthValidator = [
   idParamValidator("babyId"),
   body("weight_kg")
     .optional()
-    .isFloat({ min: 0.1, max: 50 })
-    .withMessage("Weight must be between 0.1 and 50 kg"),
+    .isFloat({ min: 0, max: 50 })
+    .withMessage("Weight must be between 0 and 50 kg"),
   body("length_cm")
     .optional()
     .isFloat({ min: 20, max: 150 })
@@ -26,6 +26,12 @@ export const createGrowthValidator = [
     .isLength({ max: 500 })
     .withMessage("Notes must be at most 500 characters"),
   optionalDateValidator("recorded_at"),
+  body("weight_kg").custom((_value: unknown, { req }: any) => {
+    if (req.body.weight_kg == null && req.body.length_cm == null && req.body.head_circum_cm == null) {
+      throw new Error("At least one measurement (weight, length, or head circumference) is required");
+    }
+    return true;
+  }),
 ];
 
 // PUT /api/v1/babies/:babyId/growth/:growthId - Update growth record
@@ -34,8 +40,8 @@ export const updateGrowthValidator = [
   idParamValidator("growthId"),
   body("weight_kg")
     .optional()
-    .isFloat({ min: 0.1, max: 50 })
-    .withMessage("Weight must be between 0.1 and 50 kg"),
+    .isFloat({ min: 0, max: 50 })
+    .withMessage("Weight must be between 0 and 50 kg"),
   body("length_cm")
     .optional()
     .isFloat({ min: 20, max: 150 })

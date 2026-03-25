@@ -1,12 +1,9 @@
 import { body, param } from "express-validator";
 import { emailValidator, idParamValidator } from "./common.validator";
-import { AccessRole } from "../dtos/caregiver-access.dto";
+import { ROLE_SECONDARY, ROLE_PROFESSIONAL } from "../dtos/caregiver-access.dto";
 
-// Valid roles for invitations (cannot invite as PRIMARY_CAREGIVER)
-const VALID_INVITE_ROLES = [
-  AccessRole.SECONDARY_CAREGIVER,
-  AccessRole.PROFESSIONAL,
-];
+// Valid role IDs for invitations (cannot invite as PRIMARY_CAREGIVER)
+const VALID_INVITE_ROLE_IDS = [ROLE_SECONDARY, ROLE_PROFESSIONAL];
 
 /**
  * Validators for invitation routes
@@ -25,9 +22,12 @@ export const createInvitationValidator = [
   body("invited_role")
     .notEmpty()
     .withMessage("Role is required")
-    .isIn(VALID_INVITE_ROLES)
+    .isInt()
+    .withMessage("Role must be a valid role ID")
+    .toInt()
+    .isIn(VALID_INVITE_ROLE_IDS)
     .withMessage(
-      `Role must be one of: ${VALID_INVITE_ROLES.join(", ")}`
+      `Role must be one of: ${VALID_INVITE_ROLE_IDS.join(", ")}`
     ),
 ];
 

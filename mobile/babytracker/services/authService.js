@@ -13,17 +13,12 @@ export const registerUser = async (userData) => {
       invitation_token: userData.invitationToken || undefined,
     };
 
-    console.log('Sending registration data:', requestData);
-
     // Call backend registration endpoint
     const response = await apiClient.post('/auth/register', requestData);
-
-    console.log('Registration response:', response);
 
     // Store token if registration returns one
     if (response.success && response.token) {
       await AsyncStorage.setItem('authToken', response.token);
-      console.log('[Auth] Token stored after registration');
     }
 
     // Return response with token and user data
@@ -31,7 +26,10 @@ export const registerUser = async (userData) => {
   } catch (error) {
     console.error('Registration error:', error);
 
-    // Return error response with more details
+    // Return full error response if available (includes validation details)
+    if (error.response) {
+      return error.response;
+    }
     return {
       success: false,
       message: error.message || 'Registration failed. Please try again.',
@@ -51,13 +49,15 @@ export const loginUser = async (email, password) => {
     // Store token on successful login
     if (response.success && response.token) {
       await AsyncStorage.setItem('authToken', response.token);
-      console.log('[Auth] Token stored after login');
     }
 
     // Return response with token and user data
     return response;
   } catch (error) {
-    // Return error response
+    // Return full error response if available (includes validation details)
+    if (error.response) {
+      return error.response;
+    }
     return {
       success: false,
       message: error.message || 'Login failed. Please try again.',
@@ -69,7 +69,6 @@ export const loginUser = async (email, password) => {
 export const logoutUser = async () => {
   try {
     await AsyncStorage.removeItem('authToken');
-    console.log('[Auth] Token removed');
     return { success: true };
   } catch (error) {
     console.error('[Auth] Logout error:', error);

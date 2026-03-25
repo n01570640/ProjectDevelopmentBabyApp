@@ -2,12 +2,10 @@
  * DTOs for caregiver baby access
  */
 
-// Access roles
-export enum AccessRole {
-  PRIMARY_CAREGIVER = "PRIMARY_CAREGIVER",
-  SECONDARY_CAREGIVER = "SECONDARY_CAREGIVER",
-  PROFESSIONAL = "PROFESSIONAL",
-}
+// Role ID constants (match roles table in DB)
+export const ROLE_PRIMARY = 1;
+export const ROLE_SECONDARY = 2;
+export const ROLE_PROFESSIONAL = 3;
 
 // Permission types
 export type Permission = "can_edit_health" | "can_edit_activities" | "can_share";
@@ -16,7 +14,8 @@ export type Permission = "can_edit_health" | "can_edit_activities" | "can_share"
 export interface CaregiverAccessDTO {
   baby_id: number;
   user_id: number;
-  access_role: AccessRole;
+  access_role: number;
+  role_name: string;
   can_edit_health: boolean;
   can_edit_activities: boolean;
   can_share: boolean;
@@ -28,16 +27,29 @@ export interface CaregiverAccessDTO {
 export interface CreateCaregiverAccessDTO {
   baby_id: number;
   user_id: number;
-  access_role: AccessRole;
+  access_role: number;
   can_edit_health: boolean;
   can_edit_activities: boolean;
   can_share: boolean;
   invited_at?: string;
 }
 
+// Caregiver access with user details (for listing caregivers)
+export interface CaregiverWithUserDTO {
+  baby_id: number;
+  user_id: number;
+  access_role: number;
+  role_name: string;
+  can_edit_health: boolean;
+  can_edit_activities: boolean;
+  can_share: boolean;
+  full_name: string;
+  email: string;
+}
+
 // Update access permissions
 export interface UpdateCaregiverAccessDTO {
-  access_role?: AccessRole;
+  access_role?: number;
   can_edit_health?: boolean;
   can_edit_activities?: boolean;
   can_share?: boolean;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,34 +7,86 @@ import {
   TouchableOpacity,
   Dimensions,
   ScrollView,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getInvitationByToken } from '../../services/invitationService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scale, verticalScale, moderateScale } from '../utils/responsive';
+import { colors, gradients } from '../theme/colors';
+import ModalWrapper from './shared/ModalWrapper';
 
 const { width, height } = Dimensions.get('window');
-
-// Reference sizes for scaling
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
 
 type Props = {
   navigation: any;
 };
 
 export default function Landing({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteLink, setInviteLink] = useState('');
+  const [inviteDetails, setInviteDetails] = useState<any>(null);
+  const [inviteToken, setInviteToken] = useState('');
+  const [loadingInvite, setLoadingInvite] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const extractToken = (input: string): string | null => {
+    const trimmed = input.trim();
+    const match = trimmed.match(/invitations\/([a-fA-F0-9-]+)/);
+    if (match) return match[1];
+    if (/^[a-fA-F0-9-]{36}$/.test(trimmed)) return trimmed;
+    return null;
+  };
+
+  const handleLookupInvite = async () => {
+    setFeedback(null);
+    const token = extractToken(inviteLink);
+    if (!token) {
+      setFeedback({ type: "error", message: "Please paste a valid invitation link or token" });
+      return;
+    }
+    setLoadingInvite(true);
+    try {
+      const res = await getInvitationByToken(token);
+      if (res?.success && res.data) {
+        if (res.data.is_expired) {
+          setFeedback({ type: "error", message: "This invitation has expired" });
+          return;
+        }
+        setInviteToken(token);
+        setInviteDetails(res.data);
+      } else {
+        setFeedback({ type: "error", message: res?.message ?? "Invitation not found" });
+      }
+    } catch {
+      setFeedback({ type: "error", message: "Failed to look up invitation" });
+    } finally {
+      setLoadingInvite(false);
+    }
+  };
+
+  const handleInviteNavigate = async (screen: 'Login' | 'SignUp') => {
+    await AsyncStorage.setItem('pendingInviteToken', inviteToken);
+    await AsyncStorage.setItem('pendingInviteBabyName', inviteDetails.baby_name);
+    const email = inviteDetails.invited_email;
+    setShowInviteModal(false);
+    setInviteDetails(null);
+    setInviteLink('');
+    navigation.navigate(screen, { inviteEmail: email, inviteToken });
+  };
+
   return (
     <LinearGradient
-      colors={['#fdfdfd', '#fafafa', '#f1f1f1']}
+      colors={gradients.background}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + verticalScale(20) }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Baby illustration */}
@@ -66,7 +118,7 @@ export default function Landing({ navigation }: Props) {
               style={styles.buttonTapArea}
             >
               <LinearGradient
-                colors={['#8ec6ff', '#81b6eb']}
+                colors={gradients.button}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.loginButton}
@@ -107,9 +159,18 @@ export default function Landing({ navigation }: Props) {
           </View>
         </View>
 
+        {/* Invitation link */}
+        <TouchableOpacity
+          onPress={() => { setFeedback(null); setShowInviteModal(true); }}
+          activeOpacity={0.7}
+          style={styles.inviteLinkContainer}
+        >
+          <Text style={styles.inviteLinkText}>Have an invitation?</Text>
+        </TouchableOpacity>
+
         {/* Store logos */}
         <LinearGradient
-          colors={['#fdfdfd', '#fafafa', '#f1f1f1']}
+          colors={gradients.background}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.storeContainer}
@@ -131,6 +192,89 @@ export default function Landing({ navigation }: Props) {
           />
         </LinearGradient>
       </ScrollView>
+
+      {/* Invitation Modal */}
+      <ModalWrapper
+        visible={showInviteModal}
+        onClose={() => { setShowInviteModal(false); setInviteDetails(null); setInviteLink(''); setFeedback(null); }}
+        title={!inviteDetails ? 'Accept Invitation' : "You're Invited!"}
+      >
+            {!inviteDetails ? (
+              <>
+                {feedback && (
+                  <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                    <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                      {feedback.message}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.modalSubtext}>
+                  Paste the invitation link you received
+                </Text>
+                <TextInput
+                  value={inviteLink}
+                  onChangeText={setInviteLink}
+                  placeholder="babytracker://invitations/..."
+                  style={styles.modalInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    onPress={() => { setShowInviteModal(false); setInviteLink(''); }}
+                    style={styles.modalCancelBtn}
+                  >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleLookupInvite}
+                    style={[styles.modalSaveBtn, loadingInvite && { opacity: 0.6 }]}
+                    disabled={loadingInvite}
+                  >
+                    <Text style={styles.modalSaveText}>
+                      {loadingInvite ? 'Looking up...' : 'Next'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.inviteDetailRow}>
+                  <Text style={styles.inviteDetailLabel}>Baby:</Text>
+                  <Text style={styles.inviteDetailValue}>{inviteDetails.baby_name}</Text>
+                </View>
+                <View style={styles.inviteDetailRow}>
+                  <Text style={styles.inviteDetailLabel}>Invited by:</Text>
+                  <Text style={styles.inviteDetailValue}>{inviteDetails.inviter_name}</Text>
+                </View>
+                <View style={styles.inviteDetailRow}>
+                  <Text style={styles.inviteDetailLabel}>Role:</Text>
+                  <Text style={styles.inviteDetailValue}>
+                    {inviteDetails.invited_role?.replace('_CAREGIVER', '')}
+                  </Text>
+                </View>
+                <View style={styles.inviteDetailRow}>
+                  <Text style={styles.inviteDetailLabel}>Your email:</Text>
+                  <Text style={styles.inviteDetailValue}>{inviteDetails.invited_email}</Text>
+                </View>
+                <View style={styles.inviteActions}>
+                  <TouchableOpacity
+                    onPress={() => handleInviteNavigate('Login')}
+                    style={styles.modalSaveBtn}
+                  >
+                    <Text style={styles.modalSaveText}>I have an account — Login</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleInviteNavigate('SignUp')}
+                    style={styles.modalRegisterBtn}
+                  >
+                    <Text style={styles.modalSaveText}>I'm new — Register</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+      </ModalWrapper>
+
     </LinearGradient>
   );
 }
@@ -146,7 +290,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: width * 0.05,
-    paddingTop: verticalScale(65),
     paddingBottom: verticalScale(32),
     alignItems: 'center',
   },
@@ -158,14 +301,14 @@ const styles = StyleSheet.create({
     fontFamily: 'RalewayBold',
     fontWeight: 'bold',
     fontSize: moderateScale(30), 
-    color: '#57a8f8',
+    color: colors.accent,
     textAlign: 'center',
     marginBottom: verticalScale(10),
   },
   subtitle: {
     fontFamily: 'RalewayBold',
     fontSize: moderateScale(16),
-    color: '#606162',
+    color: colors.textSubtitle,
     textAlign: 'center',
     lineHeight: moderateScale(22),
     marginHorizontal: width * 0.04,
@@ -240,7 +383,7 @@ const styles = StyleSheet.create({
   registerText: {
     fontFamily: 'Raleway',
     fontSize: moderateScale(18),
-    color: '#606162',
+    color: colors.textSubtitle,
     fontWeight: 'bold',
   },
   storeContainer: {
@@ -258,5 +401,113 @@ const styles = StyleSheet.create({
   storeIcon: {
     width: BUTTON_WIDTH * 0.18,
     height: verticalScale(36),
+  },
+  inviteLinkContainer: {
+    marginTop: verticalScale(5),
+    marginBottom: verticalScale(10),
+  },
+  inviteLinkText: {
+    fontSize: moderateScale(14),
+    color: colors.primary,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 5,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 15,
+    fontSize: 14,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 6,
+    backgroundColor: colors.cancel,
+  },
+  modalCancelText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalSaveBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  modalRegisterBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 6,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+  },
+  modalSaveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  inviteActions: {
+    marginTop: 16,
+    gap: 10,
+  },
+  inviteDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  inviteDetailLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  inviteDetailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
   },
 });

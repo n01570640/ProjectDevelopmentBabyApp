@@ -91,6 +91,11 @@ export async function getBaby(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     // Use detailed query to include latest growth and primary caregiver
     const baby = await babyService.getBabyWithDetails(babyId, userId);
 
@@ -121,7 +126,22 @@ export async function getBaby(req: Request, res: Response): Promise<void> {
  */
 export async function updateBaby(req: Request, res: Response): Promise<void> {
   try {
+    const userId = req.user?.user_id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
     const babyId = parseInt(req.params.babyId, 10);
+
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
 
     const data: UpdateBabyDTO = {};
     if (req.body.display_name !== undefined) data.display_name = req.body.display_name;
@@ -165,6 +185,11 @@ export async function deleteBaby(req: Request, res: Response): Promise<void> {
     const babyId = parseInt(req.params.babyId, 10);
     const accessRole = req.babyAccess?.access_role;
 
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
     if (!userId) {
       res.status(401).json({
         success: false,
@@ -173,33 +198,31 @@ export async function deleteBaby(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (accessRole === "PRIMARY_CAREGIVER") {
-      // Primary caregiver: delete the baby entirely
-      const deleted = await babyService.deleteBaby(babyId);
-
-      if (!deleted) {
-        res.status(404).json({
-          success: false,
-          message: "Baby not found",
-        });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        message: "Baby and all related data deleted successfully",
+    if (!accessRole) {
+      res.status(403).json({
+        success: false,
+        message: "Access role could not be determined",
       });
-    } else {
-      // Secondary/Professional: remove only their own access
-      await babyService.removeAccess(babyId, userId);
-
-      res.status(200).json({
-        success: true,
-        message: "Baby removed from your account",
-      });
+      return;
     }
+
+    const result = await babyService.deleteBabyOrRemoveAccess(babyId, userId, accessRole);
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+    });
   } catch (error: any) {
     console.error("Error deleting baby:", error);
+
+    if (error.message?.includes("not found")) {
+      res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to delete baby",

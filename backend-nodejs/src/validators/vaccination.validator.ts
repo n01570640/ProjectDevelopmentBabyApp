@@ -19,7 +19,13 @@ export const createVaccinationValidator = [
     .isInt({ min: 1 })
     .withMessage("vaccine_id must be a positive integer")
     .toInt(),
-  dateValidator("administered_on"),
+  dateValidator("administered_on")
+    .custom((value: string) => {
+      if (new Date(value) > new Date()) {
+        throw new Error("administered_on must not be in the future");
+      }
+      return true;
+    }),
   optionalString("clinic", 200),
   optionalString("lot_number", 100),
   optionalString("administered_by", 200),
@@ -34,7 +40,13 @@ export const updateVaccinationValidator = [
     .isInt({ min: 1 })
     .withMessage("vaccine_id must be a positive integer")
     .toInt(),
-  optionalDateValidator("administered_on"),
+  optionalDateValidator("administered_on")
+    .custom((value: string) => {
+      if (value && new Date(value) > new Date()) {
+        throw new Error("administered_on must not be in the future");
+      }
+      return true;
+    }),
   optionalString("clinic", 200),
   optionalString("lot_number", 100),
   optionalString("administered_by", 200),

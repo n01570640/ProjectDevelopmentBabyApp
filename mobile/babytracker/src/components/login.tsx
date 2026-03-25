@@ -13,25 +13,25 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loginUser } from "../../services/authService";
+import { registerForPushNotifications } from "../../services/notificationService";
+import { acceptInvitation } from "../../services/invitationService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { colors, gradients } from '../theme/colors';
 
 const { width, height } = Dimensions.get("window");
 
-// Reference sizes for scaling
-const guidelineBaseWidth = 360;
-const guidelineBaseHeight = 800;
-
-const scale = (size: number) => (width / guidelineBaseWidth) * size;
-const verticalScale = (size: number) => (height / guidelineBaseHeight) * size;
-const moderateScale = (size: number, factor = 0.5) =>
-  size + (scale(size) - size) * factor;
-
 type Props = {
   navigation: any;
+  route?: any;
 };
 
-export default function Login({ navigation }: Props) {
-  const [email, setEmail] = useState("");
+export default function Login({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
+  const inviteEmail = route?.params?.inviteEmail ?? "";
+  const [email, setEmail] = useState(inviteEmail);
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -72,11 +72,45 @@ export default function Login({ navigation }: Props) {
       setLoading(false);
 
       if (response.success) {
-        // Login successful - navigate directly to Children
-        navigation.replace("Children");
+        // Register device for push notifications (non-blocking)
+        registerForPushNotifications();
+
+        // Clear any stale invite data if not in invite flow
+        if (!inviteEmail) {
+          await AsyncStorage.removeItem("pendingInviteToken");
+          await AsyncStorage.removeItem("pendingInviteBabyName");
+        }
+
+        // Accept pending invitation only if user came through invite flow
+        let inviteMessage: { type: "success" | "error"; message: string } | undefined;
+        if (inviteEmail) {
+          try {
+            const pendingToken = await AsyncStorage.getItem("pendingInviteToken");
+            const babyName = await AsyncStorage.getItem("pendingInviteBabyName") ?? "the baby";
+            if (pendingToken) {
+              await AsyncStorage.removeItem("pendingInviteToken");
+              await AsyncStorage.removeItem("pendingInviteBabyName");
+              const acceptRes = await acceptInvitation(pendingToken);
+              if (acceptRes?.success) {
+                inviteMessage = { type: "success", message: `You now have access to ${babyName}'s profile!` };
+              } else {
+                inviteMessage = { type: "error", message: acceptRes?.message ?? "Could not accept invitation. It may have expired." };
+              }
+            }
+          } catch (e) {
+            console.error("Error processing pending invite:", e);
+          }
+        }
+
+        navigation.replace("MainTabs", inviteMessage ? { inviteMessage } : undefined);
       } else {
         // Show error from backend
-        setError(response.message || "Login failed. Please try again.");
+        if (response.errors && Array.isArray(response.errors)) {
+          const details = response.errors.map((e: any) => e.message).join("\n");
+          setError(details);
+        } else {
+          setError(response.message || "Login failed. Please try again.");
+        }
       }
     } catch (err) {
       setLoading(false);
@@ -95,7 +129,7 @@ export default function Login({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={["#fdfdfd", "#fafafa", "#f1f1f1"]}
+      colors={gradients.background}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
@@ -105,7 +139,7 @@ export default function Login({ navigation }: Props) {
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + verticalScale(20) }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -132,15 +166,16 @@ export default function Login({ navigation }: Props) {
                 <Ionicons
                   name="mail-outline"
                   size={moderateScale(20)}
-                  color="#7a7a7a"
+                  color={colors.inputIcon}
                   style={styles.inputIcon}
                 />
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, inviteEmail ? { color: colors.textTertiary } : null]}
                   placeholder="Email"
-                  placeholderTextColor="#a0a0a0"
+                  placeholderTextColor={colors.placeholder}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={inviteEmail ? undefined : setEmail}
+                  editable={!inviteEmail}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -154,13 +189,13 @@ export default function Login({ navigation }: Props) {
                 <Ionicons
                   name="lock-closed-outline"
                   size={moderateScale(20)}
-                  color="#7a7a7a"
+                  color={colors.inputIcon}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
                   placeholder="Password"
-                  placeholderTextColor="#a0a0a0"
+                  placeholderTextColor={colors.placeholder}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -174,7 +209,7 @@ export default function Login({ navigation }: Props) {
                   <Ionicons
                     name={showPassword ? "eye-outline" : "eye-off-outline"}
                     size={moderateScale(20)}
-                    color="#7a7a7a"
+                    color={colors.inputIcon}
                   />
                 </TouchableOpacity>
               </View>
@@ -199,7 +234,7 @@ export default function Login({ navigation }: Props) {
                     <Ionicons
                       name="checkmark"
                       size={moderateScale(16)}
-                      color="#81b6eb"
+                      color={colors.primary}
                     />
                   )}
                 </View>
@@ -224,7 +259,7 @@ export default function Login({ navigation }: Props) {
                 style={[styles.buttonTapArea, loading && styles.buttonDisabled]}
               >
                 <LinearGradient
-                  colors={["#8ec6ff", "#81b6eb"]}
+                  colors={gradients.button}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.signInButton}
@@ -252,14 +287,16 @@ export default function Login({ navigation }: Props) {
                 <Ionicons
                   name="arrow-back"
                   size={moderateScale(18)}
-                  color="#81b6eb"
+                  color={colors.primary}
                 />
                 <Text style={styles.goBackText}>Go Back</Text>
               </TouchableOpacity>
             </View>
           </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
+
     </LinearGradient>
   );
 }
@@ -278,7 +315,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: width * 0.08,
-    paddingTop: verticalScale(80),
     paddingBottom: verticalScale(40),
   },
   header: {
@@ -295,14 +331,14 @@ const styles = StyleSheet.create({
   welcomeTitle: {
     fontFamily: "RalewayBold",
     fontSize: moderateScale(30),
-    color: "#57a8f8",
+    color: colors.accent,
     fontWeight: "bold",
     textAlign: "center",
   },
   welcomeSubtitle: {
     fontFamily: "Quicksand",
     fontSize: moderateScale(15),
-    color: "#606162",
+    color: colors.textSubtitle,
     textAlign: "center",
     marginTop: verticalScale(4),
     marginBottom: verticalScale(6),
@@ -317,7 +353,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
     borderRadius: moderateScale(12),
     paddingHorizontal: moderateScale(16),
     paddingVertical: verticalScale(14),
@@ -336,7 +372,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: moderateScale(15),
-    color: "#2c2c2c",
+    color: colors.textInput,
     fontWeight: "500",
   },
   eyeIcon: {
@@ -357,20 +393,20 @@ const styles = StyleSheet.create({
     height: moderateScale(20),
     borderRadius: moderateScale(5),
     borderWidth: 2,
-    borderColor: "#81b6eb",
+    borderColor: colors.primary,
     marginRight: moderateScale(8),
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: colors.card,
   },
   rememberMeText: {
     fontSize: moderateScale(14),
-    color: "#5a5a5a",
+    color: colors.textMuted,
     fontWeight: "500",
   },
   forgotPasswordText: {
     fontSize: moderateScale(14),
-    color: "#81b6eb",
+    color: colors.primary,
     fontWeight: "600",
   },
   buttonWrapper: {
@@ -395,7 +431,7 @@ const styles = StyleSheet.create({
     borderRadius: BUTTON_RADIUS,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#81b6eb",
+    shadowColor: colors.primary,
     shadowOffset: {
       width: 0,
       height: 4,
@@ -418,12 +454,12 @@ const styles = StyleSheet.create({
   },
   signUpPrompt: {
     fontSize: moderateScale(14),
-    color: "#7a7a7a",
+    color: colors.inputIcon,
     fontWeight: "400",
   },
   signUpLink: {
     fontSize: moderateScale(14),
-    color: "#81b6eb",
+    color: colors.primary,
     fontWeight: "700",
   },
 
@@ -437,13 +473,13 @@ const styles = StyleSheet.create({
   },
   goBackText: {
     fontSize: moderateScale(15),
-    color: "#81b6eb",
+    color: colors.primary,
     fontWeight: "700",
     marginLeft: moderateScale(6),
   },
   errorContainer: {
-    backgroundColor: "#fce4e4",
-    borderLeftColor: "#ff6b6b",
+    backgroundColor: colors.errorLight,
+    borderLeftColor: colors.errorBorder,
     borderLeftWidth: 4,
     borderRadius: moderateScale(8),
     paddingHorizontal: moderateScale(12),
@@ -452,7 +488,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: moderateScale(13),
-    color: "#c92a2a",
+    color: colors.errorDark,
     fontWeight: "500",
   },
   buttonDisabled: {
