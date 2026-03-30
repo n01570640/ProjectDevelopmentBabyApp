@@ -28,6 +28,8 @@ import AddChildScreen from "./src/components/AddChildScreen";
 import BabyDetailScreen from "./src/components/BabyDetailScreen";
 import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
 import CustomTabBar from "./src/components/navBar";
+import ProfileHomeScreen from "./src/components/ProfileHomeScreen";
+
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -66,7 +68,8 @@ function ScheduleStack() {
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      <Stack.Screen name="ProfileHome" component={ProfileScreen} />
+      <Stack.Screen name="ProfileHome" component={ProfileHomeScreen} />
+      <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
       <Stack.Screen name="History" component={HistoryScreen} />
       <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
       <Stack.Screen name="AddChild" component={AddChildScreen} />
