@@ -53,16 +53,51 @@ interface MarkedDate {
 type Props = { navigation: any };
 
 const COLORS = {
-  activity: { dot: colors.activityDot, badge: "#E9F3FF", text: colors.activityText, icon: "flash-outline" },
-  task: { dot: colors.taskDot, badge: "#FFF4E8", text: colors.taskText, icon: "checkmark-circle-outline" },
-  reminder: { dot: colors.reminderDot, badge: "#F4EDFF", text: colors.reminderText, icon: "alarm-outline" },
+  activity: {
+    dot: colors.activityDot,
+    badge: colors.activityBadge ?? "#E9F3FF",
+    text: colors.activityText,
+    icon: "flash-outline",
+  },
+  task: {
+    dot: colors.taskDot,
+    badge: colors.taskBadge ?? "#FFF4E8",
+    text: colors.taskText,
+    icon: "checkmark-circle-outline",
+  },
+  reminder: {
+    dot: colors.reminderDot,
+    badge: colors.reminderBadge ?? "#F4EDFF",
+    text: colors.reminderText,
+    icon: "alarm-outline",
+  },
 } as const;
 
-const toDateStr = (iso?: string | null) => (iso ? iso.slice(0, 10) : "");
+const pad2 = (n: number) => String(n).padStart(2, "0");
 
-const toTimeStr = (iso?: string | null) => {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString([], {
+const parseDateSafe = (value?: string | null) => {
+  if (!value) return null;
+
+  const d = new Date(value);
+  if (!Number.isNaN(d.getTime())) return d;
+
+  const normalized = value.replace(" ", "T");
+  const d2 = new Date(normalized);
+  if (!Number.isNaN(d2.getTime())) return d2;
+
+  return null;
+};
+
+const toDateStr = (value?: string | null) => {
+  const d = parseDateSafe(value);
+  if (!d) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+const toTimeStr = (value?: string | null) => {
+  const d = parseDateSafe(value);
+  if (!d) return "";
+  return d.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -90,13 +125,6 @@ const formatWeekdayDay = (date: string) =>
     day: "numeric",
   });
 
-const timeToMinutes = (time?: string) => {
-  if (!time) return 0;
-  const parsed = new Date(`2000-01-01 ${time}`);
-  if (Number.isNaN(parsed.getTime())) return 0;
-  return parsed.getHours() * 60 + parsed.getMinutes();
-};
-
 const toEventKey = (ev: ScheduleEvent) => `${ev.type}-${ev.id}`;
 
 const getEventIso = (ev: ScheduleEvent) => {
@@ -105,14 +133,33 @@ const getEventIso = (ev: ScheduleEvent) => {
   return ev.raw?.due_at;
 };
 
+const getEventTimestamp = (ev: ScheduleEvent) => {
+  const raw = getEventIso(ev);
+  const d = parseDateSafe(raw);
+  if (!d) return Number.MAX_SAFE_INTEGER;
+  return d.getTime();
+};
+
+const getEventTimeState = (ev: ScheduleEvent) => {
+  const ts = getEventTimestamp(ev);
+  const now = Date.now();
+
+  if (ts === Number.MAX_SAFE_INTEGER) return "future";
+  if (Math.abs(ts - now) < 60000) return "now";
+  return ts < now ? "past" : "future";
+};
+
 const getRelativeLabel = (ev: ScheduleEvent) => {
-  if (!ev.time) return "";
-  const targetIso = getEventIso(ev);
-  if (!targetIso) return "";
-  const diffMs = new Date(targetIso).getTime() - Date.now();
-  const absMin = Math.round(Math.abs(diffMs) / 60000);
+  const ts = getEventTimestamp(ev);
+  if (ts === Number.MAX_SAFE_INTEGER) return "";
+
+  const diffMs = ts - Date.now();
+  if (diffMs < 0) return "";
+
+  const absMin = Math.round(diffMs / 60000);
   if (absMin < 1) return "Now";
   if (absMin < 60) return `${absMin} minute${absMin === 1 ? "" : "s"}`;
+
   const hrs = Math.round(absMin / 60);
   return `${hrs} hour${hrs === 1 ? "" : "s"}`;
 };
@@ -120,15 +167,18 @@ const getRelativeLabel = (ev: ScheduleEvent) => {
 const getDisplayTitle = (ev: ScheduleEvent) =>
   ev.title || activityLabel(ev.raw?.activity_type || "");
 
-const getStatusLabel = (ev: ScheduleEvent) => {
-  if (ev.type === "task" && ev.raw?.status === "done") return "Complete";
-  if (ev.type === "task" && ev.raw?.status === "in_progress") return "In Progress";
-  if (ev.type === "reminder") return "Reminder";
-  return ev.type === "activity" ? "Complete" : "Pending";
-};
+const getTypeLabel = (type: EventType) =>
+  type === "activity" ? "Activity" : type === "task" ? "Task" : "Reminder";
 
-const isCompletedTask = (ev: ScheduleEvent | null) =>
-  !!ev && ev.type === "task" && ev.raw?.status === "done";
+const isEventCompleted = (
+  ev: ScheduleEvent | null,
+  completedEventKeys: string[]
+) => {
+  if (!ev) return false;
+  if (completedEventKeys.includes(toEventKey(ev))) return true;
+  if (ev.type === "task" && ev.raw?.status === "done") return true;
+  return false;
+};
 
 export default function ScheduleScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -138,6 +188,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const timelinePositionsRef = useRef<Record<string, { y: number; height: number }>>({});
   const [timelineViewportHeight, setTimelineViewportHeight] = useState(height * 0.7);
+  const hasInitializedTodaySelection = useRef(false);
 
   const [selectedDate, setSelectedDate] = useState(today);
   const [mode, setMode] = useState<TabMode>("schedule");
@@ -154,6 +205,8 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   const [deleteMode, setDeleteMode] = useState(false);
   const [hiddenEventKeys, setHiddenEventKeys] = useState<string[]>([]);
+  const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [completedEventKeys, setCompletedEventKeys] = useState<string[]>([]);
 
   const [form, setForm] = useState({
     title: "",
@@ -247,7 +300,7 @@ export default function ScheduleScreen({ navigation }: Props) {
 
     return mapped
       .filter((ev) => !hiddenEventKeys.includes(toEventKey(ev)))
-      .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
+      .sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
   }, [activities, tasks, reminders, hiddenEventKeys]);
 
   const markedDates = useMemo(() => {
@@ -264,80 +317,70 @@ export default function ScheduleScreen({ navigation }: Props) {
   const dayEvents = useMemo(() => {
     return events
       .filter((e) => e.date === selectedDate)
-      .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
+      .sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
   }, [events, selectedDate]);
 
   const selectedEvent = useMemo(() => {
-    if (!dayEvents.length) return null;
-    return dayEvents.find((ev) => toEventKey(ev) === selectedEventId) ?? dayEvents[0];
+    if (!selectedEventId) return null;
+    return dayEvents.find((ev) => toEventKey(ev) === selectedEventId) ?? null;
   }, [dayEvents, selectedEventId]);
 
-  const updateCenteredEvent = useCallback(
-    (offsetY: number) => {
-      if (!dayEvents.length || deleteMode) return;
+  const nextUpcomingEventKey = useMemo(() => {
+    const now = Date.now();
+    const nextUpcoming = dayEvents.find((ev) => getEventTimestamp(ev) >= now);
+    return nextUpcoming ? toEventKey(nextUpcoming) : null;
+  }, [dayEvents]);
 
-      const viewportCenter = offsetY + timelineViewportHeight / 2;
-      let closestKey = toEventKey(dayEvents[0]);
-      let closestDistance = Number.POSITIVE_INFINITY;
+  const selectedEventTimingLabel = useMemo(() => {
+    if (!selectedEvent) return "Future Event";
 
-      dayEvents.forEach((ev) => {
-        const key = toEventKey(ev);
-        const layout = timelinePositionsRef.current[key];
-        if (!layout) return;
+    if (isEventCompleted(selectedEvent, completedEventKeys)) return "Completed";
+    if (toEventKey(selectedEvent) === nextUpcomingEventKey) return "Next Event";
 
-        const eventCenter = layout.y + layout.height / 2;
-        const distance = Math.abs(eventCenter - viewportCenter);
-
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          closestKey = key;
-        }
-      });
-
-      setSelectedEventId((prev) => (prev === closestKey ? prev : closestKey));
-    },
-    [dayEvents, timelineViewportHeight, deleteMode]
-  );
+    const state = getEventTimeState(selectedEvent);
+    if (state === "past") return "Past Event";
+    if (state === "now") return "Next Event";
+    return "Future Event";
+  }, [selectedEvent, completedEventKeys, nextUpcomingEventKey]);
 
   useEffect(() => {
     timelinePositionsRef.current = {};
   }, [selectedDate, mode, dayEvents.length, deleteMode]);
 
   useEffect(() => {
-    if (dayEvents.length > 0) {
-      if (!selectedEventId || !dayEvents.some((ev) => toEventKey(ev) === selectedEventId)) {
-        setSelectedEventId(toEventKey(dayEvents[0]));
-      }
-    } else {
+    if (!selectedEventId) return;
+    if (!dayEvents.some((ev) => toEventKey(ev) === selectedEventId)) {
       setSelectedEventId(null);
     }
   }, [dayEvents, selectedEventId]);
 
   useEffect(() => {
-    if (mode !== "schedule" || !dayEvents.length || deleteMode) return;
+    if (mode !== "schedule") return;
+    if (selectedDate !== today) return;
+    if (!dayEvents.length) return;
+    if (hasInitializedTodaySelection.current) return;
 
-    const targetKey = selectedEventId ?? toEventKey(dayEvents[0]);
+    const now = Date.now();
+    const nextUpcoming =
+      dayEvents.find((ev) => getEventTimestamp(ev) >= now) ?? dayEvents[0];
 
-    const id = setTimeout(() => {
-      const layout = timelinePositionsRef.current[targetKey];
+    if (nextUpcoming) {
+      const key = toEventKey(nextUpcoming);
+      setSelectedEventId(key);
+      hasInitializedTodaySelection.current = true;
 
-      if (layout) {
-        const targetOffset = Math.max(
-          0,
-          layout.y - timelineViewportHeight / 2 + layout.height / 2
-        );
-        scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
-        updateCenteredEvent(targetOffset);
-        return;
-      }
-
-      const firstMinutes = timeToMinutes(dayEvents[0].time);
-      const fallbackOffset = Math.max(0, firstMinutes * 0.78 - 120);
-      scrollRef.current?.scrollTo({ y: verticalScale(fallbackOffset), animated: true });
-    }, 80);
-
-    return () => clearTimeout(id);
-  }, [mode, dayEvents, selectedEventId, timelineViewportHeight, updateCenteredEvent, deleteMode]);
+      setTimeout(() => {
+        const layout = timelinePositionsRef.current[key];
+        if (layout) {
+          const targetOffset = Math.max(
+            0,
+            layout.y - timelineViewportHeight / 2 + layout.height / 2
+          );
+          scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
+        }
+      }, 120);
+    }
+  }, [mode, today, selectedDate, dayEvents, timelineViewportHeight]);
 
   const mergeDatePart = (existing: Date, picked: Date) => {
     const r = new Date(existing);
@@ -440,9 +483,10 @@ export default function ScheduleScreen({ navigation }: Props) {
       await loadEvents();
       setFeedback({ type: "success", message: "Event saved successfully." });
 
-      const newDate = modalType === "activity"
-        ? form.startTime.toISOString().slice(0, 10)
-        : form.dueAt.toISOString().slice(0, 10);
+      const newDate =
+        modalType === "activity"
+          ? form.startTime.toISOString().slice(0, 10)
+          : form.dueAt.toISOString().slice(0, 10);
 
       setSelectedDate(newDate);
     } catch (e: any) {
@@ -465,6 +509,7 @@ export default function ScheduleScreen({ navigation }: Props) {
           style: "destructive",
           onPress: () => {
             setHiddenEventKeys((prev) => [...prev, key]);
+            if (selectedEventId === key) setSelectedEventId(null);
             setFeedback({ type: "success", message: "Event removed from the schedule view." });
           },
         },
@@ -472,11 +517,27 @@ export default function ScheduleScreen({ navigation }: Props) {
     );
   };
 
+  const handleToggleComplete = (ev: ScheduleEvent) => {
+    const key = toEventKey(ev);
+    const willBeComplete = !completedEventKeys.includes(key);
+
+    setCompletedEventKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+
+    setFeedback({
+      type: "success",
+      message: willBeComplete
+        ? `${getDisplayTitle(ev)} marked complete.`
+        : `${getDisplayTitle(ev)} marked incomplete.`,
+    });
+  };
+
   const toggleDeleteMode = () => {
     setDeleteMode((prev) => !prev);
   };
 
-  const selectedIsCompleted = isCompletedTask(selectedEvent);
+  const selectedIsCompleted = isEventCompleted(selectedEvent, completedEventKeys);
 
   return (
     <View style={styles.container}>
@@ -615,6 +676,18 @@ export default function ScheduleScreen({ navigation }: Props) {
                 Upcoming event: <Text style={styles.upcomingHeadlineLight}>{getDisplayTitle(selectedEvent)}</Text>
               </Text>
 
+              <View style={styles.upcomingMetaTypeRow}>
+                <View style={styles.upcomingTypeWrap}>
+                  <View
+                    style={[
+                      styles.typeDotSmall,
+                      { backgroundColor: COLORS[selectedEvent.type].dot },
+                    ]}
+                  />
+                  <Text style={styles.upcomingTypeText}>{getTypeLabel(selectedEvent.type)}</Text>
+                </View>
+              </View>
+
               <View style={styles.upcomingRowTop}>
                 <View style={styles.timeBadge}>
                   <Text style={styles.timeBadgeText}>{selectedEvent.time || "--:--"}</Text>
@@ -633,11 +706,38 @@ export default function ScheduleScreen({ navigation }: Props) {
                   </Text>
 
                   <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.completeButton}>
-                      <Text style={styles.completeButtonText}>Complete Task</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.completeButton,
+                        isEventCompleted(selectedEvent, completedEventKeys) && styles.completeButtonDone,
+                      ]}
+                      onPress={() => handleToggleComplete(selectedEvent)}
+                    >
+                      <Text
+                        style={[
+                          styles.completeButtonText,
+                          isEventCompleted(selectedEvent, completedEventKeys) && styles.completeButtonTextDone,
+                        ]}
+                      >
+                        {isEventCompleted(selectedEvent, completedEventKeys) ? "Completed" : "Complete Task"}
+                      </Text>
                     </TouchableOpacity>
-                    <View style={styles.clockCircle}>
-                      <Ionicons name="time-outline" size={moderateScale(22)} color="#111" />
+
+                    <View
+                      style={[
+                        styles.clockCircle,
+                        isEventCompleted(selectedEvent, completedEventKeys) && styles.clockCircleDone,
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          isEventCompleted(selectedEvent, completedEventKeys)
+                            ? "checkmark-done-outline"
+                            : "time-outline"
+                        }
+                        size={moderateScale(22)}
+                        color={isEventCompleted(selectedEvent, completedEventKeys) ? "#4E97E8" : "#111"}
+                      />
                     </View>
                   </View>
                 </View>
@@ -665,18 +765,14 @@ export default function ScheduleScreen({ navigation }: Props) {
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
             onLayout={(e) => setTimelineViewportHeight(e.nativeEvent.layout.height)}
-            onScroll={(e) => updateCenteredEvent(e.nativeEvent.contentOffset.y)}
           >
             <View style={styles.timelineLine} />
 
             {dayEvents.map((ev, index) => {
               const key = toEventKey(ev);
               const isSelected = key === selectedEventId;
-              const isDone = ev.type === "task" && ev.raw?.status === "done";
-              const gapTop =
-                index === 0
-                  ? Math.max(verticalScale(14), verticalScale(timeToMinutes(ev.time) * 0.78))
-                  : verticalScale(50);
+              const isDone = isEventCompleted(ev, completedEventKeys);
+              const gapTop = index === 0 ? verticalScale(24) : verticalScale(44);
 
               return (
                 <View
@@ -698,15 +794,7 @@ export default function ScheduleScreen({ navigation }: Props) {
                     disabled={deleteMode}
                     onPress={() => {
                       if (deleteMode) return;
-                      setSelectedEventId(key);
-                      const layout = timelinePositionsRef.current[key];
-                      if (layout) {
-                        const targetOffset = Math.max(
-                          0,
-                          layout.y - timelineViewportHeight / 2 + layout.height / 2
-                        );
-                        scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
-                      }
+                      setSelectedEventId((prev) => (prev === key ? null : key));
                     }}
                   >
                     {isSelected ? (
@@ -755,7 +843,7 @@ export default function ScheduleScreen({ navigation }: Props) {
                                   selectedIsCompleted && styles.nextEventPillTextComplete,
                                 ]}
                               >
-                                {selectedIsCompleted ? "Completed" : "Next Event"}
+                                {selectedEventTimingLabel}
                               </Text>
                             </View>
                             <Text
@@ -786,12 +874,27 @@ export default function ScheduleScreen({ navigation }: Props) {
                             {selectedEvent.description || "No extra instructions for this event."}
                           </Text>
 
+                          <View style={styles.focusMetaRowLower}>
+                            <View style={styles.focusTypeWrap}>
+                              <View
+                                style={[
+                                  styles.typeDot,
+                                  { backgroundColor: COLORS[selectedEvent.type].dot },
+                                ]}
+                              />
+                              <Text style={styles.focusTypeText}>
+                                {getTypeLabel(selectedEvent.type)}
+                              </Text>
+                            </View>
+                          </View>
+
                           <View style={styles.focusFooterRow}>
                             <TouchableOpacity
                               style={[
                                 styles.completeButton,
                                 selectedIsCompleted && styles.completeButtonDone,
                               ]}
+                              onPress={() => handleToggleComplete(selectedEvent)}
                             >
                               <Text
                                 style={[
@@ -830,28 +933,13 @@ export default function ScheduleScreen({ navigation }: Props) {
                             activeOpacity={deleteMode ? 1 : 0.8}
                             onPress={() => {
                               if (deleteMode) return;
-                              setSelectedEventId(key);
+                              setSelectedEventId((prev) => (prev === key ? null : key));
                             }}
                           >
                             <View
                               style={[
-                                styles.eventTimeCell,
-                                isDone && styles.eventTimeCellDone,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.eventStripText,
-                                  isDone && styles.eventStripTextDone,
-                                ]}
-                              >
-                                {ev.time || "--:--"}
-                              </Text>
-                            </View>
-
-                            <View
-                              style={[
                                 styles.eventTitleCell,
+                                styles.eventTitleCellExpanded,
                                 isDone && styles.eventTitleCellDone,
                               ]}
                             >
@@ -865,11 +953,44 @@ export default function ScheduleScreen({ navigation }: Props) {
                                 {getDisplayTitle(ev)}
                               </Text>
                             </View>
-                          </TouchableOpacity>
 
-                          <Text style={[styles.statusText, isDone && styles.statusTextDone]}>
-                            {getStatusLabel(ev)}
-                          </Text>
+                            <View
+                              style={[
+                                styles.eventTimeCell,
+                                styles.eventTimeCellRight,
+                                isDone && styles.eventTimeCellDone,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.eventStripText,
+                                  isDone && styles.eventStripTextDone,
+                                ]}
+                              >
+                                {ev.time || "--:--"}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.stripMetaRow}>
+                          <View style={styles.stripTypeWrap}>
+                            <View
+                              style={[
+                                styles.typeDotSmall,
+                                { backgroundColor: COLORS[ev.type].dot },
+                              ]}
+                            />
+                            <Text style={styles.stripTypeText}>
+                              {getTypeLabel(ev.type)}
+                            </Text>
+                          </View>
+
+                          {isDone && (
+                            <Text style={[styles.statusText, styles.statusTextDone]}>
+                              Completed
+                            </Text>
+                          )}
 
                           {deleteMode && (
                             <TouchableOpacity
@@ -881,12 +1002,32 @@ export default function ScheduleScreen({ navigation }: Props) {
                           )}
                         </View>
 
-                        {!deleteMode && (
-                          <View style={styles.relativeRow}>
-                            <Text style={styles.relativeLabel}>{getRelativeLabel(ev)}</Text>
-                            <Ionicons name="time-outline" size={moderateScale(18)} color="#777" />
-                          </View>
-                        )}
+                        {!deleteMode && (() => {
+                          const relativeLabel = getRelativeLabel(ev);
+                          const timeState = getEventTimeState(ev);
+
+                          if (timeState === "past") {
+                            return (
+                              <View style={styles.relativeRow}>
+                                <Text style={styles.relativeLabelPassed}>Passed</Text>
+                                <Ionicons
+                                  name="checkmark-done-outline"
+                                  size={moderateScale(18)}
+                                  color="#8A8A8A"
+                                />
+                              </View>
+                            );
+                          }
+
+                          if (!relativeLabel) return null;
+
+                          return (
+                            <View style={styles.relativeRow}>
+                              <Text style={styles.relativeLabel}>{relativeLabel}</Text>
+                              <Ionicons name="time-outline" size={moderateScale(18)} color="#777" />
+                            </View>
+                          );
+                        })()}
                       </>
                     )}
                   </View>
@@ -897,15 +1038,57 @@ export default function ScheduleScreen({ navigation }: Props) {
             <View style={{ height: verticalScale(160) }} />
           </ScrollView>
 
+          {showTypeMenu && (
+            <View
+              style={[
+                styles.floatingTypeMenu,
+                { bottom: insets.bottom + verticalScale(158) },
+              ]}
+            >
+              {(["activity", "task", "reminder"] as EventType[]).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={styles.floatingTypeOption}
+                  onPress={() => {
+                    setShowTypeMenu(false);
+                    openModal(t);
+                  }}
+                  activeOpacity={0.9}
+                >
+                  <View
+                    style={[
+                      styles.typeDotSmall,
+                      { backgroundColor: COLORS[t].dot, marginRight: scale(8) },
+                    ]}
+                  />
+                  <Ionicons
+                    name={COLORS[t].icon as any}
+                    size={moderateScale(16)}
+                    color={COLORS[t].dot}
+                  />
+                  <Text style={styles.floatingTypeOptionText}>
+                    {getTypeLabel(t)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           <TouchableOpacity
             style={[
               styles.floatingManualButton,
               { bottom: insets.bottom + verticalScale(18) },
             ]}
-            onPress={() => openModal("task")}
+            onPress={() => setShowTypeMenu((prev) => !prev)}
           >
-            <Ionicons name="add" size={moderateScale(24)} color="#fff" />
-            <Text style={styles.floatingManualButtonText}>Add Manual Event</Text>
+            <Ionicons
+              name={showTypeMenu ? "close" : "add"}
+              size={moderateScale(24)}
+              color="#fff"
+            />
+            <Text style={styles.floatingManualButtonText}>
+              {showTypeMenu ? "Close" : "Add Manual Event"}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -972,6 +1155,7 @@ function AddEventModal({
   onClose,
   onSave,
   onChange,
+  onChangeDate,
   onOpenPicker,
 }: ModalProps) {
   const c = COLORS[type];
@@ -982,6 +1166,20 @@ function AddEventModal({
 
   const fmtTime = (d: Date) =>
     d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+  const typeTitle =
+    type === "activity"
+      ? "Add Activity"
+      : type === "task"
+      ? "Add Task"
+      : "Add Reminder";
+
+  const typeSubtitle =
+    type === "activity"
+      ? "Log a baby activity for the selected day"
+      : type === "task"
+      ? "Create a manual task for the schedule"
+      : "Create a reminder for the selected day";
 
   const DtRow = ({
     label,
@@ -996,19 +1194,29 @@ function AddEventModal({
     tk: string;
     required?: boolean;
   }) => (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>
+    <View style={styles.modalSectionCard}>
+      <Text style={styles.modalSectionLabel}>
         {label}
         {required ? <Text style={styles.requiredStar}> *</Text> : null}
       </Text>
-      <View style={styles.dtRow}>
-        <TouchableOpacity style={[styles.dtBtn, { borderColor: c.dot }]} onPress={() => onOpenPicker(dk)}>
-          <Ionicons name="calendar-outline" size={14} color={c.dot} />
-          <Text style={[styles.dtBtnText, { color: c.dot }]}>{fmtDate(value)}</Text>
+
+      <View style={styles.modalDtRow}>
+        <TouchableOpacity
+          style={styles.modalDtBtn}
+          onPress={() => onOpenPicker(dk)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="calendar-outline" size={16} color="#5F8FC8" />
+          <Text style={styles.modalDtBtnText}>{fmtDate(value)}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.dtBtn, { borderColor: c.dot }]} onPress={() => onOpenPicker(tk)}>
-          <Ionicons name="time-outline" size={14} color={c.dot} />
-          <Text style={[styles.dtBtnText, { color: c.dot }]}>{fmtTime(value)}</Text>
+
+        <TouchableOpacity
+          style={styles.modalDtBtn}
+          onPress={() => onOpenPicker(tk)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="time-outline" size={16} color="#5F8FC8" />
+          <Text style={styles.modalDtBtnText}>{fmtTime(value)}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1018,17 +1226,35 @@ function AddEventModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <View style={[styles.modalHeader, { borderBottomColor: c.dot }]}>
-            <Ionicons name={c.icon as any} size={22} color={c.dot} />
-            <Text style={[styles.modalTitle, { color: c.text }]}>
-              {" "}Add {type.charAt(0).toUpperCase() + type.slice(1)}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-              <Ionicons name="close" size={22} color="#888" />
-            </TouchableOpacity>
-          </View>
+          <LinearGradient
+            colors={["#8DBCF1", "#79ADDF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.modalHero}
+          >
+            <View style={styles.modalHeroCompactRow}>
+              <View style={styles.modalHeroLeft}>
+                <View style={styles.modalHeroIconWrap}>
+                  <Ionicons name={c.icon as any} size={22} color="#FFFFFF" />
+                </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHeroTextWrap}>
+                  <Text style={styles.modalHeroTitleCompact}>{typeTitle}</Text>
+                  <Text style={styles.modalHeroSubtitleCompact}>{typeSubtitle}</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity onPress={onClose} style={styles.modalCloseButtonCompact}>
+                <Ionicons name="close" size={22} color="#5F6E7E" />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalScrollContent}
+          >
             {feedback && (
               <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
                 <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
@@ -1037,165 +1263,226 @@ function AddEventModal({
               </View>
             )}
 
-            <Text style={styles.modalDate}>
-              📅{" "}
-              {new Date(`${selectedDate}T12:00:00`).toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              })}
-            </Text>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>
                 Select Baby <Text style={styles.requiredStar}>*</Text>
               </Text>
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: "row" }}>
-                  {babies.map((b) => (
-                    <TouchableOpacity
-                      key={b.baby_id}
-                      onPress={() => onSelectBaby(b)}
-                      style={[
-                        styles.babySelectChip,
-                        modalBaby?.baby_id === b.baby_id && {
-                          backgroundColor: c.dot,
-                          borderColor: c.dot,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name="person-circle-outline"
-                        size={14}
-                        color={modalBaby?.baby_id === b.baby_id ? "#fff" : c.dot}
-                        style={{ marginRight: 4 }}
-                      />
-                      <Text
+                <View style={styles.modalChipRow}>
+                  {babies.map((b) => {
+                    const active = modalBaby?.baby_id === b.baby_id;
+                    return (
+                      <TouchableOpacity
+                        key={b.baby_id}
+                        onPress={() => onSelectBaby(b)}
+                        activeOpacity={0.85}
                         style={[
-                          styles.babySelectChipText,
-                          { color: c.dot },
-                          modalBaby?.baby_id === b.baby_id && { color: "#fff" },
+                          styles.modalBabyChip,
+                          active && styles.modalBabyChipActive,
                         ]}
                       >
-                        {b.display_name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Ionicons
+                          name="person-circle-outline"
+                          size={15}
+                          color={active ? "#FFFFFF" : "#5F8FC8"}
+                          style={{ marginRight: 5 }}
+                        />
+                        <Text
+                          style={[
+                            styles.modalBabyChipText,
+                            active && styles.modalBabyChipTextActive,
+                          ]}
+                        >
+                          {b.display_name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </ScrollView>
             </View>
 
             {type === "activity" ? (
               <>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>
+                <View style={styles.modalSectionCard}>
+                  <Text style={styles.modalSectionLabel}>
                     Activity Type <Text style={styles.requiredStar}>*</Text>
                   </Text>
+
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={{ flexDirection: "row" }}>
-                      {activityTypes.map((at) => (
-                        <TouchableOpacity
-                          key={at}
-                          onPress={() => onChange("activityType", at)}
-                          style={[
-                            styles.chip,
-                            form.activityType === at && {
-                              backgroundColor: c.dot,
-                              borderColor: c.dot,
-                            },
-                          ]}
-                        >
-                          <Text
+                    <View style={styles.modalChipRow}>
+                      {activityTypes.map((at) => {
+                        const active = form.activityType === at;
+                        return (
+                          <TouchableOpacity
+                            key={at}
+                            onPress={() => onChange("activityType", at)}
+                            activeOpacity={0.85}
                             style={[
-                              styles.chipText,
-                              form.activityType === at && { color: "#fff" },
+                              styles.modalTypeChip,
+                              active && styles.modalTypeChipActive,
                             ]}
                           >
-                            {at.charAt(0).toUpperCase() + at.slice(1)}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                            <Text
+                              style={[
+                                styles.modalTypeChipText,
+                                active && styles.modalTypeChipTextActive,
+                              ]}
+                            >
+                              {at.charAt(0).toUpperCase() + at.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </ScrollView>
                 </View>
 
-                <DtRow label="Start Time" required value={form.startTime} dk="startDate" tk="startTime" />
+                <DtRow
+                  label="Start Time"
+                  required
+                  value={form.startTime}
+                  dk="startDate"
+                  tk="startTime"
+                />
+
+                <View style={styles.modalSectionCard}>
+                  <View style={styles.endTimeHeaderRow}>
+                    <Text style={styles.modalSectionLabel}>End Time</Text>
+
+                    {form.endTime ? (
+                      <TouchableOpacity
+                        onPress={() => onChangeDate("endTime", null)}
+                        style={styles.clearBtn}
+                      >
+                        <Text style={styles.clearBtnText}>Clear</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => onChangeDate("endTime", new Date(form.startTime))}
+                        style={[styles.clearBtn, { borderColor: "#8DBCF1" }]}
+                      >
+                        <Text style={[styles.clearBtnText, { color: "#5F8FC8" }]}>
+                          + Add end time
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {form.endTime && (
+                    <View style={styles.modalDtRow}>
+                      <TouchableOpacity
+                        style={styles.modalDtBtn}
+                        onPress={() => onOpenPicker("endDate")}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color="#5F8FC8" />
+                        <Text style={styles.modalDtBtnText}>{fmtDate(form.endTime)}</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.modalDtBtn}
+                        onPress={() => onOpenPicker("endTime")}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="time-outline" size={16} color="#5F8FC8" />
+                        <Text style={styles.modalDtBtnText}>{fmtTime(form.endTime)}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
               </>
             ) : (
               <>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>
+                <View style={styles.modalSectionCard}>
+                  <Text style={styles.modalSectionLabel}>
                     Title <Text style={styles.requiredStar}>*</Text>
                   </Text>
                   <TextInput
                     value={form.title}
                     onChangeText={(v) => onChange("title", v)}
                     placeholder="Enter title..."
-                    style={styles.input}
+                    placeholderTextColor="#9AA8B6"
+                    style={styles.modalInput}
                   />
                 </View>
 
-                <DtRow label="Due Date & Time" required value={form.dueAt} dk="dueDate" tk="dueTime" />
+                <DtRow
+                  label="Due Date & Time"
+                  required
+                  value={form.dueAt}
+                  dk="dueDate"
+                  tk="dueTime"
+                />
               </>
             )}
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{type === "activity" ? "Notes" : "Description"}</Text>
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>
+                {type === "activity" ? "Notes" : "Description"}
+              </Text>
               <TextInput
                 value={form.description}
                 onChangeText={(v) => onChange("description", v)}
                 placeholder={type === "activity" ? "Any notes..." : "More details..."}
+                placeholderTextColor="#9AA8B6"
                 multiline
                 numberOfLines={4}
-                style={[styles.input, styles.inputMultiline]}
+                style={[styles.modalInput, styles.modalInputMultiline]}
               />
             </View>
 
             {type === "task" && (
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Status</Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                  {["pending", "in_progress", "done"].map((s) => (
-                    <TouchableOpacity
-                      key={s}
-                      onPress={() => onChange("status", s)}
-                      style={[
-                        styles.chip,
-                        form.status === s && {
-                          backgroundColor: c.dot,
-                          borderColor: c.dot,
-                        },
-                      ]}
-                    >
-                      <Text
+              <View style={styles.modalSectionCard}>
+                <Text style={styles.modalSectionLabel}>Status</Text>
+                <View style={styles.modalChipWrap}>
+                  {["pending", "in_progress", "done"].map((s) => {
+                    const active = form.status === s;
+                    return (
+                      <TouchableOpacity
+                        key={s}
+                        onPress={() => onChange("status", s)}
+                        activeOpacity={0.85}
                         style={[
-                          styles.chipText,
-                          form.status === s && { color: "#fff" },
+                          styles.modalTypeChip,
+                          active && styles.modalTypeChipActive,
                         ]}
                       >
-                        {s.replace("_", " ")}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Text
+                          style={[
+                            styles.modalTypeChipText,
+                            active && styles.modalTypeChipTextActive,
+                          ]}
+                        >
+                          {s.replace("_", " ")}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
             )}
           </ScrollView>
 
-          <View style={styles.modalActions}>
-            <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity onPress={onClose} style={styles.modalCancelBtn} activeOpacity={0.85}>
+              <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={onSave}
               disabled={saving || !modalBaby}
-              style={[styles.saveBtn, { backgroundColor: modalBaby ? c.dot : "#ccc" }]}
+              activeOpacity={0.85}
+              style={[
+                styles.modalSaveBtn,
+                (!modalBaby || saving) && styles.modalSaveBtnDisabled,
+              ]}
             >
               {saving ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text style={styles.saveBtnText}>Save</Text>
+                <Text style={styles.modalSaveBtnText}>Save Event</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1338,14 +1625,14 @@ const styles = StyleSheet.create({
 
   sectionTitlePill: {
     marginTop: verticalScale(18),
-    marginLeft: scale(10),
+    marginLeft: 0,
     backgroundColor: "#89B9ED",
     borderTopRightRadius: moderateScale(16),
     borderBottomRightRadius: moderateScale(16),
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(18),
     alignSelf: "flex-start",
-    maxWidth: width * 0.78,
+    maxWidth: width * 0.82,
   },
 
   sectionTitleText: {
@@ -1370,7 +1657,8 @@ const styles = StyleSheet.create({
 
   calendarInfoRow: {
     marginTop: verticalScale(16),
-    marginHorizontal: scale(10),
+    marginLeft: 0,
+    marginRight: scale(10),
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -1419,6 +1707,27 @@ const styles = StyleSheet.create({
   upcomingHeadlineLight: {
     fontWeight: "500",
     color: "#666",
+  },
+
+  upcomingMetaTypeRow: {
+    marginTop: verticalScale(10),
+  },
+
+  upcomingTypeWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#EEF4FA",
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(5),
+  },
+
+  upcomingTypeText: {
+    marginLeft: scale(5),
+    fontSize: moderateScale(11),
+    fontWeight: "700",
+    color: "#5F6E7E",
   },
 
   upcomingRowTop: {
@@ -1634,14 +1943,26 @@ const styles = StyleSheet.create({
     minWidth: scale(95),
   },
 
+  eventTimeCellRight: {
+    borderRightWidth: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: "#B8B8B8",
+    alignItems: "center",
+  },
+
   eventTimeCellDone: {
     borderRightColor: "rgba(255,255,255,0.5)",
+    borderLeftColor: "rgba(255,255,255,0.5)",
   },
 
   eventTitleCell: {
     paddingHorizontal: scale(10),
     justifyContent: "center",
     flexShrink: 1,
+  },
+
+  eventTitleCellExpanded: {
+    flex: 1,
   },
 
   eventTitleCellDone: {
@@ -1660,15 +1981,14 @@ const styles = StyleSheet.create({
   },
 
   statusText: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(12),
     color: "#5D9EF0",
-    fontWeight: "500",
-    paddingTop: width < 370 ? 0 : verticalScale(2),
+    fontWeight: "700",
   },
 
   statusTextDone: {
     color: "#5D9EF0",
-    fontWeight: "700",
+    fontWeight: "800",
   },
 
   deleteInlineButton: {
@@ -1766,6 +2086,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  focusMetaRowLower: {
+    marginTop: verticalScale(10),
+    marginHorizontal: scale(16),
+  },
+
+  focusTypeWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#EEF4FA",
+    borderRadius: moderateScale(14),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(6),
+  },
+
+  focusTypeText: {
+    fontSize: moderateScale(12),
+    fontWeight: "700",
+    color: "#5F6E7E",
+    marginLeft: scale(6),
+  },
+
   focusTitle: {
     fontSize: moderateScale(17),
     fontWeight: "900",
@@ -1812,6 +2154,42 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
 
+  stripMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: verticalScale(8),
+    marginLeft: scale(12),
+    gap: scale(10),
+  },
+
+  stripTypeWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F2F6FA",
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+  },
+
+  stripTypeText: {
+    fontSize: moderateScale(11),
+    fontWeight: "700",
+    color: "#5F6E7E",
+    marginLeft: scale(5),
+  },
+
+  typeDot: {
+    width: moderateScale(10),
+    height: moderateScale(10),
+    borderRadius: moderateScale(5),
+  },
+
+  typeDotSmall: {
+    width: moderateScale(8),
+    height: moderateScale(8),
+    borderRadius: moderateScale(4),
+  },
+
   relativeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1823,6 +2201,12 @@ const styles = StyleSheet.create({
   relativeLabel: {
     fontSize: moderateScale(13),
     color: "#7B6A57",
+  },
+
+  relativeLabelPassed: {
+    fontSize: moderateScale(13),
+    color: "#8A8A8A",
+    fontWeight: "700",
   },
 
   floatingManualButton: {
@@ -1841,13 +2225,44 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    marginBottom: scale(65)
+    marginBottom: scale(65),
   },
 
   floatingManualButtonText: {
     color: "#FFF",
     fontWeight: "900",
     fontSize: moderateScale(12),
+  },
+
+  floatingTypeMenu: {
+    position: "absolute",
+    right: scale(14),
+    backgroundColor: "#FFFFFF",
+    borderRadius: moderateScale(18),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(8),
+    zIndex: 29,
+    elevation: 11,
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    minWidth: scale(170),
+  },
+
+  floatingTypeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(10),
+    borderRadius: moderateScale(12),
+  },
+
+  floatingTypeOptionText: {
+    marginLeft: scale(8),
+    fontSize: moderateScale(13),
+    fontWeight: "700",
+    color: "#5A6470",
   },
 
   emptyState: {
@@ -1899,166 +2314,273 @@ const styles = StyleSheet.create({
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.42)",
+    backgroundColor: "rgba(0,0,0,0.36)",
     justifyContent: "flex-end",
   },
 
   modalCard: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: scale(20),
-    paddingTop: verticalScale(16),
-    paddingBottom: verticalScale(30),
-    maxHeight: height * 0.85,
+    backgroundColor: "#EEF4F8",
+    borderTopLeftRadius: moderateScale(28),
+    borderTopRightRadius: moderateScale(28),
+    overflow: "hidden",
+    maxHeight: height * 0.88,
   },
 
-  modalHeader: {
+  modalHero: {
+    paddingHorizontal: scale(18),
+    paddingTop: verticalScale(14),
+    paddingBottom: verticalScale(12),
+    borderTopLeftRadius: moderateScale(28),
+    borderTopRightRadius: moderateScale(28),
+  },
+
+  modalHeroCompactRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: 1.5,
-    paddingBottom: verticalScale(10),
-    marginBottom: verticalScale(12),
+    justifyContent: "space-between",
+    gap: scale(12),
   },
 
-  modalTitle: {
-    fontSize: moderateScale(18),
-    fontWeight: "800",
+  modalHeroLeft: {
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
 
-  modalClose: {
-    padding: 4,
+  modalHeroTextWrap: {
+    marginLeft: scale(12),
+    flex: 1,
   },
 
-  modalDate: {
-    fontSize: moderateScale(13),
-    color: "#6d8eb0",
-    marginBottom: verticalScale(14),
-    fontWeight: "500",
+  modalHeroIconWrap: {
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(21),
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  fieldGroup: {
-    marginBottom: verticalScale(14),
+  modalCloseButtonCompact: {
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
+    backgroundColor: "#F3F6F9",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  fieldLabel: {
-    fontSize: moderateScale(13),
-    fontWeight: "600",
-    color: "#2d4150",
-    marginBottom: verticalScale(6),
+  modalHeroTitleCompact: {
+    fontSize: moderateScale(22),
+    fontWeight: "900",
+    color: "#FFFFFF",
+    textShadowColor: "rgba(0,0,0,0.14)",
+    textShadowRadius: 2,
+  },
+
+  modalHeroSubtitleCompact: {
+    marginTop: verticalScale(2),
+    fontSize: moderateScale(12),
+    color: "#EEF6FF",
+    lineHeight: moderateScale(16),
+  },
+
+  modalScrollContent: {
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(14),
+    paddingBottom: verticalScale(12),
+  },
+
+  modalSectionCard: {
+    backgroundColor: "#F6F6F6",
+    borderRadius: moderateScale(16),
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(12),
+    marginBottom: verticalScale(12),
+  },
+
+  modalSectionLabel: {
+    fontSize: moderateScale(14),
+    fontWeight: "800",
+    color: "#555555",
+    marginBottom: verticalScale(8),
   },
 
   requiredStar: {
-    color: "#e05353",
+    color: "#E35D5B",
   },
 
-  babySelectChip: {
+  modalChipRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#c0d4e8",
-    borderRadius: 20,
+  },
+
+  modalChipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+
+  modalBabyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF5FC",
+    borderWidth: 1,
+    borderColor: "#BFD2E6",
+    borderRadius: moderateScale(18),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(8),
+    marginRight: scale(8),
+  },
+
+  modalBabyChipActive: {
+    backgroundColor: "#8DBCF1",
+    borderColor: "#8DBCF1",
+  },
+
+  modalBabyChipText: {
+    fontSize: moderateScale(13),
+    fontWeight: "700",
+    color: "#5F8FC8",
+  },
+
+  modalBabyChipTextActive: {
+    color: "#FFFFFF",
+  },
+
+  modalTypeChip: {
+    backgroundColor: "#F2F6FA",
+    borderWidth: 1,
+    borderColor: "#C3D1DE",
+    borderRadius: moderateScale(18),
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(7),
     marginRight: scale(8),
-    marginBottom: verticalScale(4),
-    backgroundColor: "#f0f6fc",
+    marginBottom: verticalScale(8),
   },
 
-  babySelectChipText: {
-    fontSize: moderateScale(13),
+  modalTypeChipActive: {
+    backgroundColor: "#8DBCF1",
+    borderColor: "#8DBCF1",
+  },
+
+  modalTypeChipText: {
+    fontSize: moderateScale(12),
     fontWeight: "700",
+    color: "#5F6E7E",
+    textTransform: "capitalize",
   },
 
-  input: {
-    borderWidth: 1.5,
-    borderColor: "#d8e4f0",
-    borderRadius: 10,
+  modalTypeChipTextActive: {
+    color: "#FFFFFF",
+  },
+
+  modalInput: {
+    minHeight: verticalScale(46),
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(10),
     fontSize: moderateScale(14),
-    color: "#2d4150",
-    backgroundColor: "#f7f9fc",
+    color: "#444444",
   },
 
-  inputMultiline: {
-    height: verticalScale(92),
+  modalInputMultiline: {
+    minHeight: verticalScale(96),
+    paddingTop: verticalScale(12),
     textAlignVertical: "top",
   },
 
-  chip: {
-    borderWidth: 1.5,
-    borderColor: "#c0d4e8",
-    borderRadius: 20,
-    paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(5),
-    marginRight: scale(8),
-    marginBottom: verticalScale(6),
-    backgroundColor: "#f0f6fc",
-  },
-
-  chipText: {
-    fontSize: moderateScale(12),
-    color: colors.primaryDark,
-    fontWeight: "600",
-  },
-
-  dtRow: {
+  modalDtRow: {
     flexDirection: "row",
     gap: scale(8),
   },
 
-  dtBtn: {
+  modalDtBtn: {
     flex: 1,
+    minHeight: verticalScale(44),
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: "#BDD0E3",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: scale(10),
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(10),
-    backgroundColor: "#f7f9fc",
   },
 
-  dtBtnText: {
+  modalDtBtnText: {
+    marginLeft: scale(6),
     fontSize: moderateScale(12),
-    fontWeight: "600",
+    fontWeight: "700",
+    color: "#5F6E7E",
     flexShrink: 1,
   },
 
-  modalActions: {
+  endTimeHeaderRow: {
     flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: scale(10),
-    marginTop: verticalScale(16),
-  },
-
-  cancelBtn: {
-    paddingHorizontal: scale(18),
-    paddingVertical: verticalScale(10),
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: "#c0d4e8",
-  },
-
-  cancelBtnText: {
-    color: "#6d8eb0",
-    fontWeight: "600",
-    fontSize: moderateScale(14),
-  },
-
-  saveBtn: {
-    paddingHorizontal: scale(22),
-    paddingVertical: verticalScale(10),
-    borderRadius: 10,
-    minWidth: scale(80),
     alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: verticalScale(6),
   },
 
-  saveBtnText: {
-    color: "#fff",
-    fontWeight: "700",
+  clearBtn: {
+    borderWidth: 1.5,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(3),
+  },
+
+  clearBtnText: {
+    fontSize: moderateScale(11),
+    color: "#aaa",
+    fontWeight: "600",
+  },
+
+  modalFooter: {
+    flexDirection: "row",
+    gap: scale(10),
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(8),
+    paddingBottom: verticalScale(18),
+    backgroundColor: "#EEF4F8",
+  },
+
+  modalCancelBtn: {
+    flex: 1,
+    minHeight: verticalScale(50),
+    borderRadius: moderateScale(16),
+    backgroundColor: "#E6EBF0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalCancelBtnText: {
     fontSize: moderateScale(14),
+    fontWeight: "800",
+    color: "#66717C",
+  },
+
+  modalSaveBtn: {
+    flex: 1.35,
+    minHeight: verticalScale(50),
+    borderRadius: moderateScale(16),
+    backgroundColor: "#8DBCF1",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(8),
+  },
+
+  modalSaveBtnDisabled: {
+    backgroundColor: "#B8C7D6",
+  },
+
+  modalSaveBtnText: {
+    fontSize: moderateScale(14),
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
 });

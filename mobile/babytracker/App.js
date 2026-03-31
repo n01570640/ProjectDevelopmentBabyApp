@@ -28,7 +28,7 @@ import AddChildScreen from "./src/components/AddChildScreen";
 import BabyDetailScreen from "./src/components/BabyDetailScreen";
 import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
 import CustomTabBar from "./src/components/navBar";
-import ProfileHomeScreen from "./src/components/ProfileHomeScreen";
+import ProfileHomeScreen from "./src/components/ProfileHomeScreen"; //import
 
 
 const Stack = createNativeStackNavigator();
@@ -64,7 +64,7 @@ function ScheduleStack() {
     </Stack.Navigator>
   );
 }
-
+//changed to add new profile home
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
