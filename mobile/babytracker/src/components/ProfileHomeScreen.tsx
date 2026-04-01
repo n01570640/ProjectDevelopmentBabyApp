@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,16 +8,29 @@ import {
   Switch,
   Modal,
   TextInput,
+  Image,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
 import { useAppSelector } from "../store/hooks";
+import {
+  getProfilePhoto,
+  uploadProfilePhoto,
+} from "../../services/profilePhotoService";
 
 export default function ProfileHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [editVisible, setEditVisible] = useState(false);
+
+  // ── Profile photo state ──────────────────────────────────
+  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const { items: rawBabies } = useAppSelector((state: any) => state.babies);
   const primaryBaby = rawBabies?.[0];
@@ -88,6 +101,73 @@ export default function ProfileHomeScreen({ navigation }: any) {
     setProfile(derivedProfile);
   }, [derivedProfile]);
 
+  // ── Fetch saved profile photo on mount ───────────────────
+  const fetchSavedPhoto = useCallback(async () => {
+    setPhotoLoading(true);
+    try {
+      const result = await getProfilePhoto();
+      if (result?.success && result.data?.sas_url) {
+        setProfilePhotoUri(result.data.sas_url);
+      }
+    } catch (e) {
+      console.error("ProfileHomeScreen: failed to fetch profile photo", e);
+    } finally {
+      setPhotoLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSavedPhoto();
+  }, [fetchSavedPhoto]);
+
+  // ── Pick image from library and upload ───────────────────
+  const handleAvatarPress = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission Required",
+        "Photo library access is required to change your profile picture."
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (result.canceled) return;
+
+    const imageUri = result.assets[0].uri;
+
+    // Optimistically show the local image immediately
+    setProfilePhotoUri(imageUri);
+    setPhotoUploading(true);
+
+    try {
+      const uploadResult = await uploadProfilePhoto(imageUri);
+      if (uploadResult?.success && uploadResult.data?.sas_url) {
+        setProfilePhotoUri(uploadResult.data.sas_url);
+      } else {
+        Alert.alert(
+          "Upload Failed",
+          uploadResult?.message ?? "Could not upload photo. Please try again."
+        );
+        fetchSavedPhoto();
+      }
+    } catch (e: any) {
+      Alert.alert(
+        "Upload Failed",
+        e?.message ?? "An error occurred uploading your photo."
+      );
+      fetchSavedPhoto();
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
   const openSubpage = () => {
     navigation.navigate("ProfileScreen");
   };
@@ -133,11 +213,33 @@ export default function ProfileHomeScreen({ navigation }: any) {
       >
         <View style={[styles.heroCard, { paddingTop: insets.top + 18 }]}>
           <View style={styles.heroRow}>
-            <View style={styles.avatarOuter}>
+            <TouchableOpacity
+              style={styles.avatarOuter}
+              onPress={handleAvatarPress}
+              activeOpacity={0.85}
+              disabled={photoUploading}
+            >
               <View style={styles.avatarInner}>
-                <Ionicons name="person" size={54} color="#6E89A6" />
+                {photoLoading ? (
+                  <ActivityIndicator size="small" color="#6E89A6" />
+                ) : profilePhotoUri ? (
+                  <Image
+                    source={{ uri: profilePhotoUri }}
+                    style={styles.avatarImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Ionicons name="person" size={54} color="#6E89A6" />
+                )}
               </View>
-            </View>
+              <View style={styles.avatarCameraBadge} pointerEvents="none">
+                {photoUploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="camera" size={14} color="#fff" />
+                )}
+              </View>
+            </TouchableOpacity>
 
             <View style={styles.heroTextWrap}>
               <Text
@@ -431,6 +533,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 18,
+    position: "relative",
   },
 
   avatarInner: {
@@ -441,6 +544,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
+  },
+
+  avatarImage: {
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+  },
+
+  avatarCameraBadge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#8DBCF1",
+    borderWidth: 2,
+    borderColor: "#F7F7F7",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   heroTextWrap: {
@@ -767,3 +890,5 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 });
+
+

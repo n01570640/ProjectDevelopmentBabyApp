@@ -17,6 +17,7 @@ import symptomRoutes from "./routes/symptom.routes";
 import medicationRoutes from "./routes/medication.routes";
 import analyticsRoutes from "./routes/analytics.routes";
 import notificationRoutes from "./routes/notification.routes";
+import userRoutes from "./routes/user.routes";
 import { startReminderCron } from "./jobs/reminder-cron";
 
 // Load environment variables
@@ -62,6 +63,7 @@ app.use("/api/v1/babies", medicationRoutes);    // /babies/:babyId/medications
 app.use("/api/v1/analytics", analyticsRoutes);      // /analytics/baby/:babyId/summary, /graphs
 app.use("/api/v1/notifications", notificationRoutes); // /notifications/register-token, /notifications
 app.use("/api/v1/guidelines", guidelineRoutes);
+app.use("/api/v1/users", userRoutes);                // /users/me/profile-photo
 
 // SQL test route (non-production only)
 if (process.env.NODE_ENV !== 'production') {
@@ -112,6 +114,8 @@ app.get('/api/v1', (req, res) => {
       analytics_graphs: '/api/v1/analytics/baby/:babyId/graphs',
       notifications: '/api/v1/notifications',
       guidelines: '/api/v1/guidelines',
+      profile_photo_get: '/api/v1/users/me/profile-photo',
+      profile_photo_upload: '/api/v1/users/me/profile-photo',
       health: '/api/v1/health',
       ...(process.env.NODE_ENV !== 'production' ? { test_db: '/api/v1/test-db' } : {})
     }

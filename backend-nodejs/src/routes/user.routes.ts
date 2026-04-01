@@ -1,20 +1,29 @@
 import express from "express";
-import { createUser } from "../services/user.service";
+import multer from "multer";
 import { verifyTokenMiddleware } from "../middleware/auth.middleware";
+import * as profilePhotoController from "../controllers/profile-photo.controller";
 
 const router = express.Router();
 
-// All user routes require authentication
-router.use(verifyTokenMiddleware);
-
-router.post("/", async (req, res) => {
-  try {
-    const user = await createUser(req.body);
-    res.status(201).json({ success: true, user });
-  } catch (err: any) {
-    console.error("Create User Error:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
+// Use memory storage so the file buffer is available on req.file.buffer
+// We handle the upload to Azure ourselves in the service layer.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
 });
 
+// All routes require a valid JWT
+router.use(verifyTokenMiddleware);
+
+// GET  /api/v1/users/me/profile-photo  — fetch current photo URL
+router.get("/me/profile-photo", profilePhotoController.getProfilePhoto);
+
+// POST /api/v1/users/me/profile-photo  — upload / replace photo
+router.post(
+  "/me/profile-photo",
+  upload.single("photo"),
+  profilePhotoController.uploadProfilePhoto
+);
+
 export default router;
+
