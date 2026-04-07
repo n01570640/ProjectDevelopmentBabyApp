@@ -7,7 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // =========================================================
 
 // Your machine's IPv4 (for physical devices on same WiFi)
-const LOCAL_IPV4 = "192.168.68.50";
+const LOCAL_IPV4 = "10.0.0.232";
 
 // Determine which BASE URL to use
 const getApiBaseUrl = () => {

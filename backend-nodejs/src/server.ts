@@ -146,8 +146,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // ------------------------------------------------------------
 // START SERVER
 // ------------------------------------------------------------
-app.listen(PORT, () => {
-  console.log(`Baby Tracking API listening on port ${PORT}`);
+app.listen(Number(PORT), "0.0.0.0", () => {
+  console.log(`Baby Tracking API listening on 0.0.0.0:${PORT} (all interfaces)`);
   console.log(`API Documentation: http://localhost:${PORT}/api/v1`);
   console.log(`DB Test Endpoint: http://localhost:${PORT}/api/v1/test-db`);
 
