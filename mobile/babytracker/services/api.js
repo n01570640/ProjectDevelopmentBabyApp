@@ -28,7 +28,7 @@ const getApiBaseUrl = () => {
   return "http://localhost:3000/api/v1";
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
 
 // =========================================================
