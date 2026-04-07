@@ -116,6 +116,8 @@ app.get('/api/v1', (req, res) => {
       guidelines: '/api/v1/guidelines',
       profile_photo_get: '/api/v1/users/me/profile-photo',
       profile_photo_upload: '/api/v1/users/me/profile-photo',
+      baby_profile_photo_get: '/api/v1/babies/:babyId/profile-photo',
+      baby_profile_photo_upload: '/api/v1/babies/:babyId/profile-photo',
       health: '/api/v1/health',
       ...(process.env.NODE_ENV !== 'production' ? { test_db: '/api/v1/test-db' } : {})
     }

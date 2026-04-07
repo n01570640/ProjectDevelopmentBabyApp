@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppSelector, useAppDispatch } from "../store/hooks";
 import { fetchBabies } from "../store/slices/babiesSlice";
+import { getBabyProfilePhoto } from "../../services/babyProfilePhotoService";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -121,6 +122,25 @@ export default function Children({ navigation, route }: Props) {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(1);
   const [selectedGridBabyId, setSelectedGridBabyId] = useState<number | null>(null);
 
+  // ── Baby photo map: { [baby_id]: sas_url | null } ───────
+  const [babyPhotos, setBabyPhotos] = useState<Record<number, string | null>>({});
+
+  useEffect(() => {
+    if (!babies || babies.length === 0) return;
+    babies.forEach(async (baby: BabyProfile) => {
+      try {
+        const result = await getBabyProfilePhoto(baby.baby_id);
+        if (result?.success && result.data?.sas_url) {
+          setBabyPhotos((prev) => ({ ...prev, [baby.baby_id]: result.data.sas_url }));
+        } else {
+          setBabyPhotos((prev) => ({ ...prev, [baby.baby_id]: null }));
+        }
+      } catch {
+        setBabyPhotos((prev) => ({ ...prev, [baby.baby_id]: null }));
+      }
+    });
+  }, [babies]);
+
   useEffect(() => {
     const inviteMessage = route?.params?.inviteMessage;
     if (inviteMessage) {
@@ -163,11 +183,15 @@ export default function Children({ navigation, route }: Props) {
   };
 
   const renderLargeCard = (baby: BabyProfile) => {
+    const photoUri = babyPhotos[baby.baby_id];
     return (
       <View key={baby.baby_id} style={styles.card}>
         <View style={styles.cardTopAccent} />
 
-        <Image source={placeholderImage} style={styles.cardImage} />
+        <Image
+          source={photoUri ? { uri: photoUri } : placeholderImage}
+          style={styles.cardImage}
+        />
 
         <View style={styles.cardBody}>
           <View style={styles.nameRow}>
@@ -258,12 +282,16 @@ export default function Children({ navigation, route }: Props) {
 
   const renderTwoUpCard = (baby: BabyProfile) => {
     const cardWidth = getCardWidth();
+    const photoUri = babyPhotos[baby.baby_id];
 
     return (
       <View key={baby.baby_id} style={[styles.twoUpCard, { width: cardWidth }]}>
         <View style={styles.cardTopAccent} />
 
-        <Image source={placeholderImage} style={styles.twoUpImage} />
+        <Image
+          source={photoUri ? { uri: photoUri } : placeholderImage}
+          style={styles.twoUpImage}
+        />
 
         <View style={styles.twoUpBody}>
           <Text style={styles.twoUpName} numberOfLines={1}>
@@ -323,6 +351,7 @@ export default function Children({ navigation, route }: Props) {
   const renderCompactCard = (baby: BabyProfile) => {
     const cardWidth = getCardWidth();
     const isSelected = selectedGridBabyId === baby.baby_id;
+    const photoUri = babyPhotos[baby.baby_id];
 
     return (
       <TouchableOpacity
@@ -339,7 +368,10 @@ export default function Children({ navigation, route }: Props) {
       >
         <View style={[styles.compactAccent, isSelected && styles.compactAccentSelected]} />
 
-        <Image source={placeholderImage} style={styles.compactImage} />
+        <Image
+          source={photoUri ? { uri: photoUri } : placeholderImage}
+          style={styles.compactImage}
+        />
 
         <View style={styles.compactBody}>
           <Text style={[styles.compactName, isSelected && styles.compactNameSelected]} numberOfLines={1}>
