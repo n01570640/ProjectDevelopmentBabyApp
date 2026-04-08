@@ -18,9 +18,9 @@ type TabConfig = {
 };
 
 const TABS: TabConfig[] = [
-  { routeName: "", icon: "home-outline", label: "Home" }, // TODO: add HomeTab route when analytics/dashboard screen is built
   { routeName: "ChildrenTab", icon: "people-outline", label: "Babies" },
   { routeName: "ScheduleTab", icon: "calendar-outline", label: "Schedule" },
+  { routeName: "StatisticsTab", icon: "stats-chart-outline", label: "Statistics" },
   { routeName: "ProfileTab", icon: "person-circle-outline", label: "Profile" },
 ];
 

@@ -24,6 +24,7 @@ import Children from "./src/components/children";
 import ProfileScreen from "./src/components/ProfileScreen";
 import HistoryScreen from "./src/components/HistoryScreen";
 import ScheduleScreen from "./src/components/ScheduleScreen";
+import StatisticsScreen from "./src/components/StatisticsScreen";
 import AddChildScreen from "./src/components/AddChildScreen";
 import BabyDetailScreen from "./src/components/BabyDetailScreen";
 import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
@@ -64,6 +65,15 @@ function ScheduleStack() {
     </Stack.Navigator>
   );
 }
+
+function StatisticsStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="StatisticsHome" component={StatisticsScreen} />
+    </Stack.Navigator>
+  );
+}
+
 //changed to add new profile home
 function ProfileStack() {
   return (
@@ -87,6 +97,7 @@ function MainTabs() {
     >
       <Tab.Screen name="ChildrenTab" component={ChildrenStack} />
       <Tab.Screen name="ScheduleTab" component={ScheduleStack} />
+      <Tab.Screen name="StatisticsTab" component={StatisticsStack} />
       <Tab.Screen name="ProfileTab" component={ProfileStack} />
     </Tab.Navigator>
   );
