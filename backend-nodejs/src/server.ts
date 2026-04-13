@@ -1,3 +1,6 @@
+import { webcrypto } from "crypto";
+if (!globalThis.crypto) (globalThis as any).crypto = webcrypto;
+
 import express, { Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';

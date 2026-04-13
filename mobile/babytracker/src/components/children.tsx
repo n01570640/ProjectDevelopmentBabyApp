@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import {
   getBabyProfilePhoto,
   uploadBabyProfilePhoto,
 } from "../../services/babyProfilePhotoService";
+import { useFocusEffect } from "@react-navigation/native";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -165,7 +166,7 @@ export default function Children({ navigation, route }: Props) {
   } | null>(null);
   const [childForm, setChildForm] = useState<ChildModalForm>(emptyForm());
 
-  useEffect(() => {
+  const loadBabyPhotos = useCallback(() => {
     if (!babies || babies.length === 0) return;
     babies.forEach(async (baby: BabyProfile) => {
       try {
@@ -180,6 +181,12 @@ export default function Children({ navigation, route }: Props) {
       }
     });
   }, [babies]);
+
+  // Fetch photos on initial load and when babies list changes
+  useEffect(() => { loadBabyPhotos(); }, [loadBabyPhotos]);
+
+  // Re-fetch photos when navigating back to this screen
+  useFocusEffect(useCallback(() => { loadBabyPhotos(); }, [loadBabyPhotos]));
 
   useEffect(() => {
     const inviteMessage = route?.params?.inviteMessage;
@@ -351,7 +358,6 @@ export default function Children({ navigation, route }: Props) {
         const createdBabyId =
           response?.data?.baby_id ??
           response?.data?.id ??
-          response?.baby_id ??
           null;
 
         if (createdBabyId && childForm.localPhotoUri) {

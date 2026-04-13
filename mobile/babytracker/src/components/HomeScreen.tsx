@@ -240,14 +240,14 @@ export default function HomeScreen({ navigation }: any) {
           )}
         </View>
 
-        {feedback ? (
-          <View style={[styles.feedbackBanner, feedback.type === "error" && styles.feedbackErrorBanner]}> 
-            <Text style={styles.feedbackText}>{feedback.message}</Text>
-          </View>
-        ) : null}
-
         <View style={{ height: verticalScale(80) }} />
       </ScrollView>
+
+      {feedback ? (
+        <View style={[styles.feedbackBanner, feedback.type === "error" && styles.feedbackErrorBanner]}>
+          <Text style={styles.feedbackText}>{feedback.message}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -422,10 +422,18 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
   },
   feedbackBanner: {
+    position: "absolute",
+    bottom: verticalScale(100),
+    left: scale(20),
+    right: scale(20),
     backgroundColor: "#D1F7E0",
     borderRadius: 16,
     padding: scale(12),
-    marginTop: verticalScale(6),
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
   feedbackErrorBanner: {
     backgroundColor: "#FDE2E1",

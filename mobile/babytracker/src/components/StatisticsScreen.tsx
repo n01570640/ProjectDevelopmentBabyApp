@@ -185,7 +185,7 @@ export default function StatisticsScreen() {
   const taskStats = {
     total: Array.isArray(tasks) ? tasks.length : 0,
     completed: Array.isArray(tasks)
-      ? tasks.filter((t: any) => t.status === "completed").length
+      ? tasks.filter((t: any) => t.status === "completed" || t.status === "done").length
       : 0,
     incomplete: 0,
   };
@@ -263,10 +263,7 @@ export default function StatisticsScreen() {
       style={[
         styles.container,
         {
-          paddingTop: insets.top,
-          paddingBottom: insets.bottom,
-          paddingLeft: insets.left,
-          paddingRight: insets.right,
+          paddingBottom: insets.bottom + verticalScale(90),
         },
       ]}
     >
@@ -274,7 +271,7 @@ export default function StatisticsScreen() {
         colors={[colors.primary, colors.accent]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.headerGradient}
+        style={[styles.headerGradient, { paddingTop: insets.top + verticalScale(12) }]}
       >
         <Text style={styles.headerTitle}>Statistics</Text>
         <Text style={styles.headerSubtitle}>
@@ -538,7 +535,7 @@ export default function StatisticsScreen() {
         onRequestClose={() => setShowBabySelector(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(verticalScale(16), insets.bottom) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Baby</Text>
               <TouchableOpacity

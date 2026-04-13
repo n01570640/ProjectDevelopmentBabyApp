@@ -1158,6 +1158,7 @@ function AddEventModal({
   onChangeDate,
   onOpenPicker,
 }: ModalProps) {
+  const insets = useSafeAreaInsets();
   const c = COLORS[type];
   const activityTypes = ["feeding", "sleep", "diaper", "play", "bath", "other"];
 
@@ -1254,6 +1255,7 @@ function AddEventModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.modalScrollContent}
+            style={{ flexShrink: 1 }}
           >
             {feedback && (
               <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
@@ -1465,7 +1467,7 @@ function AddEventModal({
             )}
           </ScrollView>
 
-          <View style={styles.modalFooter}>
+          <View style={[styles.modalFooter, { paddingBottom: Math.max(verticalScale(18), insets.bottom) }]}>
             <TouchableOpacity onPress={onClose} style={styles.modalCancelBtn} activeOpacity={0.85}>
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -2323,7 +2325,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: moderateScale(28),
     borderTopRightRadius: moderateScale(28),
     overflow: "hidden",
-    maxHeight: height * 0.88,
+    maxHeight: height * 0.82,
   },
 
   modalHero: {

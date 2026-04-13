@@ -17,6 +17,7 @@ export interface ExpoPushMessage {
   body: string;
   data?: Record<string, unknown>;
   sound?: "default" | null;
+  channelId?: string;
 }
 
 export interface ExpoPushReceipt {
@@ -37,6 +38,7 @@ export async function sendPushNotification(
     body: message.body,
     data: message.data ?? {},
     sound: message.sound ?? "default",
+    channelId: message.channelId ?? "default",
   };
 
   try {
@@ -76,7 +78,11 @@ export async function sendBatchPushNotifications(
   const receipts: ExpoPushReceipt[] = [];
 
   for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-    const batch = messages.slice(i, i + BATCH_SIZE);
+    const batch = messages.slice(i, i + BATCH_SIZE).map((m) => ({
+      ...m,
+      sound: m.sound ?? "default",
+      channelId: m.channelId ?? "default",
+    }));
 
     try {
       const response = await fetch(EXPO_PUSH_URL, {

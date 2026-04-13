@@ -180,7 +180,7 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
         end={{ x: 1, y: 1 }}
         style={[styles.header, { paddingTop: insets.top + 10 }]}
       >
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backBtn, { top: insets.top + verticalScale(10) }]}>
           <Ionicons name="arrow-back" size={moderateScale(22)} color="#1a3d5c" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -224,7 +224,7 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
         {baby.access_role === "PRIMARY_CAREGIVER" && (
           <TouchableOpacity
             onPress={() => setEditModalVisible(true)}
-            style={styles.editBtn}
+            style={[styles.editBtn, { top: insets.top + verticalScale(10) }]}
           >
             <Ionicons name="create-outline" size={moderateScale(22)} color="#1a3d5c" />
           </TouchableOpacity>
@@ -440,6 +440,7 @@ function EditBabyModal({
   onClose: () => void;
   onSaved: (updated: any) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState(baby?.display_name ?? "");
   const [dob, setDob] = useState(baby?.date_of_birth?.slice(0, 10) ?? "");
   const [sex, setSex] = useState<string | null>(baby?.sex ?? null);
@@ -510,7 +511,7 @@ function EditBabyModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
             {feedback && (
               <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
                 <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
@@ -609,7 +610,7 @@ function EditBabyModal({
           </ScrollView>
 
           {/* Actions */}
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { paddingBottom: Math.max(verticalScale(16), insets.bottom) }]}>
             <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -648,6 +649,7 @@ function LogGrowthModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [weightKg, setWeightKg] = useState("");
   const [lengthCm, setLengthCm] = useState("");
   const [headCm, setHeadCm] = useState("");
@@ -700,7 +702,7 @@ function LogGrowthModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled">
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
             {feedback && (
               <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
                 <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
@@ -765,7 +767,7 @@ function LogGrowthModal({
             </View>
           </ScrollView>
 
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { paddingBottom: Math.max(verticalScale(16), insets.bottom) }]}>
             <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -813,7 +815,6 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     position: "absolute",
-    top: Platform.OS === "android" ? verticalScale(40) : verticalScale(54),
     left: scale(16),
     width: moderateScale(38),
     height: moderateScale(38),
@@ -825,7 +826,6 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     position: "absolute",
-    top: Platform.OS === "android" ? verticalScale(40) : verticalScale(54),
     right: scale(16),
     width: moderateScale(38),
     height: moderateScale(38),
@@ -892,7 +892,7 @@ const styles = StyleSheet.create({
 
   // Scroll
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: scale(16), paddingTop: verticalScale(16) },
+  scrollContent: { paddingHorizontal: scale(16), paddingTop: verticalScale(16), paddingBottom: verticalScale(110) },
 
   // Section card
   sectionCard: {
@@ -985,7 +985,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(20),
     paddingTop: verticalScale(16),
     paddingBottom: verticalScale(32),
-    maxHeight: height * 0.88,
+    maxHeight: height * 0.75,
   },
   modalHeaderRow: {
     flexDirection: "row",

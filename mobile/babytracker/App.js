@@ -5,7 +5,18 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 import { store } from "./src/store";
+import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+
+// Android: create notification channel with MAX importance for heads-up popups
+if (Platform.OS === "android") {
+  Notifications.setNotificationChannelAsync("default", {
+    name: "Default",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    sound: "default",
+  });
+}
 
 // Show notifications even when the app is in the foreground
 Notifications.setNotificationHandler({
