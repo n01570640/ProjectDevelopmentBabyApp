@@ -20,15 +20,16 @@ Notifications.setNotificationHandler({
 import Landing from "./src/components/landing";
 import Login from "./src/components/login";
 import Register from "./src/components/register";
-import Children from "./src/components/children";
 import ProfileScreen from "./src/components/ProfileScreen";
 import HistoryScreen from "./src/components/HistoryScreen";
 import ScheduleScreen from "./src/components/ScheduleScreen";
+import StatisticsScreen from "./src/components/StatisticsScreen";
 import AddChildScreen from "./src/components/AddChildScreen";
 import BabyDetailScreen from "./src/components/BabyDetailScreen";
 import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
 import CustomTabBar from "./src/components/navBar";
-import ProfileHomeScreen from "./src/components/ProfileHomeScreen"; //import
+import ProfileHomeScreen from "./src/components/ProfileHomeScreen";
+import HomeScreen from "./src/components/HomeScreen";
 
 
 const Stack = createNativeStackNavigator();
@@ -50,7 +51,7 @@ const screenOptions = { headerShown: false };
 function ChildrenStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      <Stack.Screen name="ChildrenHome" component={Children} />
+      <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
       <Stack.Screen name="AddChild" component={AddChildScreen} />
     </Stack.Navigator>
@@ -64,6 +65,15 @@ function ScheduleStack() {
     </Stack.Navigator>
   );
 }
+
+function StatisticsStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="StatisticsHome" component={StatisticsScreen} />
+    </Stack.Navigator>
+  );
+}
+
 //changed to add new profile home
 function ProfileStack() {
   return (
@@ -87,6 +97,7 @@ function MainTabs() {
     >
       <Tab.Screen name="ChildrenTab" component={ChildrenStack} />
       <Tab.Screen name="ScheduleTab" component={ScheduleStack} />
+      <Tab.Screen name="StatisticsTab" component={StatisticsStack} />
       <Tab.Screen name="ProfileTab" component={ProfileStack} />
     </Tab.Navigator>
   );
