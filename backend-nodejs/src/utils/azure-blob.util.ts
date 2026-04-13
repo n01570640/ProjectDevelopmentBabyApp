@@ -1,3 +1,4 @@
+
 /**
  * Azure Blob Storage utility
  *
@@ -86,12 +87,13 @@ export async function uploadBufferToBlob(
 
 /**
  * Generate a SAS (Shared Access Signature) URL for a private blob.
+ * Generate a SAS (Shared Access Signature) URL for a private blob.
  * The URL is valid for `expiryMinutes` minutes (default 60).
  *
  * @param blobName  - The blob name stored in DB, e.g. "profile-photos/uuid.jpg"
  * @returns A time-limited signed URL that can be used in <Image source={{ uri }} />
  */
-export function generateSasUrl(blobNameOrUrl: string, expiryMinutes: number = 60): string {
+export function generateSasUrl(blobNameOrUrl: string, expiryMinutes: number = 1440): string {
   const cs = getConnectionString();
   const containerName = getContainerName();
   const { accountName, accountKey } = parseConnectionString(cs);

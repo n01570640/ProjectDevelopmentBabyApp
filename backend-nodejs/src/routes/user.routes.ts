@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import { verifyTokenMiddleware } from "../middleware/auth.middleware";
 import * as profilePhotoController from "../controllers/profile-photo.controller";
+import * as userController from "../controllers/user.controller";
 
 const router = express.Router();
 
@@ -14,6 +15,12 @@ const upload = multer({
 
 // All routes require a valid JWT
 router.use(verifyTokenMiddleware);
+
+// GET  /api/v1/users/me           — fetch current user profile
+router.get("/me", userController.getMe);
+
+// PUT  /api/v1/users/me           — update current user profile (full_name, phone)
+router.put("/me", userController.updateMe);
 
 // GET  /api/v1/users/me/profile-photo  — fetch current photo URL
 router.get("/me/profile-photo", profilePhotoController.getProfilePhoto);

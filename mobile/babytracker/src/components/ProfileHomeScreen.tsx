@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -16,11 +16,12 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
-import { useAppSelector } from "../store/hooks";
 import {
   getProfilePhoto,
   uploadProfilePhoto,
 } from "../../services/profilePhotoService";
+import { getMe, updateMe } from "../../services/userService";
+import { logoutUser } from "../../services/authService";
 
 export default function ProfileHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -32,61 +33,21 @@ export default function ProfileHomeScreen({ navigation }: any) {
   const [photoLoading, setPhotoLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  const { items: rawBabies } = useAppSelector((state: any) => state.babies);
-  const primaryBaby = rawBabies?.[0];
-
-  const derivedProfile = useMemo(() => {
-    const displayName =
-      primaryBaby?.display_name?.trim() ||
-      primaryBaby?.name?.trim() ||
-      "";
-
-    const role =
-      primaryBaby?.access_role === "PRIMARY_CAREGIVER"
-        ? "Primary Caregiver"
-        : primaryBaby?.access_role
-        ? "Secondary Caregiver"
-        : "";
-
-    const phone =
-      primaryBaby?.phone_number?.trim() ||
-      primaryBaby?.phone?.trim() ||
-      "";
-
-    const email =
-      primaryBaby?.email?.trim() ||
-      primaryBaby?.caregiver_email?.trim() ||
-      "";
-
-    const languages =
-      primaryBaby?.languages?.trim() ||
-      primaryBaby?.language?.trim() ||
-      "";
-
-    const address =
-      primaryBaby?.address?.trim() ||
-      "";
-
-    const caregiverType =
-      primaryBaby?.caregiver_type?.trim() ||
-      "";
-
-    return {
-      firstLineName: displayName,
-      fullName: displayName,
-      role,
-      email,
-      phone,
-      languages,
-      address,
-      caregiverType,
-      alertType: "All",
-      theme: "Default Blue",
-      fontScale: "x1.0",
-    };
-  }, [primaryBaby]);
-
-  const [profile, setProfile] = useState(derivedProfile);
+  // ── Real user data from backend ──────────────────────────
+  const [userLoading, setUserLoading] = useState(false);
+  const [profile, setProfile] = useState({
+    firstLineName: "",
+    fullName: "",
+    role: "",
+    email: "",
+    phone: "",
+    languages: "",
+    address: "",
+    caregiverType: "",
+    alertType: "All",
+    theme: "Default Blue",
+    fontScale: "x1.0",
+  });
 
   const [editForm, setEditForm] = useState({
     fullName: "",
@@ -97,9 +58,37 @@ export default function ProfileHomeScreen({ navigation }: any) {
     caregiverType: "",
   });
 
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // ── Fetch real user profile on mount ─────────────────────
+  const fetchUserProfile = useCallback(async () => {
+    setUserLoading(true);
+    try {
+      const result = await getMe();
+      if (result?.success && result.data) {
+        const u = result.data;
+        setProfile((prev) => ({
+          ...prev,
+          firstLineName: u.full_name ?? "",
+          fullName: u.full_name ?? "",
+          email: u.email ?? "",
+          phone: u.phone ?? "",
+          // languages, address, caregiverType are not in the DB yet — keep as empty
+          languages: "",
+          address: "",
+          caregiverType: "",
+        }));
+      }
+    } catch (e) {
+      console.error("[ProfileHomeScreen] fetchUserProfile error:", e);
+    } finally {
+      setUserLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    setProfile(derivedProfile);
-  }, [derivedProfile]);
+    fetchUserProfile();
+  }, [fetchUserProfile]);
 
   // ── Fetch saved profile photo on mount ───────────────────
   const fetchSavedPhoto = useCallback(async () => {
@@ -107,7 +96,13 @@ export default function ProfileHomeScreen({ navigation }: any) {
     try {
       const result = await getProfilePhoto();
       if (result?.success && result.data?.sas_url) {
-        setProfilePhotoUri(result.data.sas_url);
+        // Append a cache-busting param so React Native's Image component
+        // never serves a stale/expired SAS URL from its internal cache.
+        const busted = `${result.data.sas_url}&_cb=${Date.now()}`;
+        setProfilePhotoUri(busted);
+      } else {
+        // No photo saved yet — make sure we clear any previous URI
+        setProfilePhotoUri(null);
       }
     } catch (e) {
       console.error("ProfileHomeScreen: failed to fetch profile photo", e);
@@ -149,7 +144,8 @@ export default function ProfileHomeScreen({ navigation }: any) {
     try {
       const uploadResult = await uploadProfilePhoto(imageUri);
       if (uploadResult?.success && uploadResult.data?.sas_url) {
-        setProfilePhotoUri(uploadResult.data.sas_url);
+        const busted = `${uploadResult.data.sas_url}&_cb=${Date.now()}`;
+        setProfilePhotoUri(busted);
       } else {
         Alert.alert(
           "Upload Failed",
@@ -184,18 +180,58 @@ export default function ProfileHomeScreen({ navigation }: any) {
     setEditVisible(true);
   };
 
-  const saveEditProfile = () => {
-    setProfile((prev) => ({
-      ...prev,
-      fullName: editForm.fullName,
-      firstLineName: editForm.fullName,
-      phone: editForm.phone,
-      email: editForm.email,
-      languages: editForm.languages,
-      address: editForm.address,
-      caregiverType: editForm.caregiverType,
-    }));
-    setEditVisible(false);
+  const saveEditProfile = async () => {
+    if (!editForm.fullName.trim()) {
+      Alert.alert("Validation", "Full name cannot be empty.");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const result = await updateMe({
+        full_name: editForm.fullName.trim(),
+        phone: editForm.phone.trim() || null,
+      });
+      if (result?.success) {
+        setProfile((prev) => ({
+          ...prev,
+          fullName: editForm.fullName.trim(),
+          firstLineName: editForm.fullName.trim(),
+          phone: editForm.phone.trim(),
+          // keep local-only fields as entered
+          languages: editForm.languages,
+          address: editForm.address,
+          caregiverType: editForm.caregiverType,
+        }));
+        setEditVisible(false);
+      } else {
+        Alert.alert("Save Failed", result?.message ?? "Could not save profile changes.");
+      }
+    } catch (e: any) {
+      Alert.alert("Save Failed", e?.message ?? "An error occurred saving your profile.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            await logoutUser();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "Landing" }],
+            });
+          },
+        },
+      ]
+    );
   };
 
   const displayValue = (value?: string) => {
@@ -370,6 +406,15 @@ export default function ProfileHomeScreen({ navigation }: any) {
             <Ionicons name="happy-outline" size={24} color="#FFFFFF" />
             <Text style={styles.babyInfoButtonText}>Baby Info</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.9}
+          >
+            <Ionicons name="log-out-outline" size={22} color="#D9534F" />
+            <Text style={styles.logoutButtonText}>Log Out</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -439,10 +484,13 @@ export default function ProfileHomeScreen({ navigation }: any) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalSaveButton}
+                style={[styles.modalSaveButton, savingProfile && { opacity: 0.6 }]}
                 onPress={saveEditProfile}
+                disabled={savingProfile}
               >
-                <Text style={styles.modalSaveText}>Save Changes</Text>
+                <Text style={styles.modalSaveText}>
+                  {savingProfile ? "Saving..." : "Save Changes"}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -888,6 +936,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     color: "#FFFFFF",
+  },
+
+  logoutButton: {
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: "#FFF0F0",
+    borderRadius: 18,
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#F5C6C6",
+  },
+
+  logoutButtonText: {
+    color: "#D9534F",
+    fontSize: 18,
+    fontWeight: "800",
   },
 });
 

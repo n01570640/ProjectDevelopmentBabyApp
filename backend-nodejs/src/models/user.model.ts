@@ -58,3 +58,32 @@ export async function findUserById(user_id: number): Promise<UserDTO | null> {
 
   return result.recordset[0] || null;
 }
+
+// Update editable user profile fields (full_name, phone)
+export async function updateUser(
+  user_id: number,
+  data: { full_name: string; phone: string | null }
+): Promise<UserDTO | null> {
+  const db = await getDb();
+
+  const result = await db
+    .request()
+    .input("user_id", sql.BigInt, user_id)
+    .input("full_name", sql.NVarChar(200), data.full_name)
+    .input("phone", sql.NVarChar(40), data.phone)
+    .query(`
+      UPDATE users
+      SET full_name = @full_name,
+          phone     = @phone
+      OUTPUT INSERTED.user_id,
+             INSERTED.email,
+             INSERTED.full_name,
+             INSERTED.phone,
+             INSERTED.created_at,
+             INSERTED.is_active
+      WHERE user_id = @user_id
+    `);
+
+  return result.recordset[0] || null;
+}
+
