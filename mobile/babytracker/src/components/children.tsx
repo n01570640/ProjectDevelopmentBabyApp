@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,12 +11,20 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
+  Modal,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppSelector, useAppDispatch } from "../store/hooks";
 import { fetchBabies } from "../store/slices/babiesSlice";
-import { getBabyProfilePhoto } from "../../services/babyProfilePhotoService";
+import { createBaby, updateBaby } from "../../services/babyService";
+import {
+  getBabyProfilePhoto,
+  uploadBabyProfilePhoto,
+} from "../../services/babyProfilePhotoService";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -38,19 +47,22 @@ type BabyProfile = {
   display_name: string;
   date_of_birth: string;
   sex: "male" | "female" | null;
-  blood_type: string | null;
+  blood_type?: string | null;
   notes: string | null;
-  created_at: string;
-  access_role: string;
-  can_edit_health: boolean;
-  can_edit_activities: boolean;
-  can_share: boolean;
+  created_at?: string;
+  access_role?: string;
+  can_edit_health?: boolean;
+  can_edit_activities?: boolean;
+  can_share?: boolean;
   latest_growth: LatestGrowth | null;
   primary_caregiver_name: string | null;
 };
 
 type LayoutMode = 1 | 2 | 4;
+type SexOption = "male" | "female" | null;
+type ModalMode = "add" | "edit";
 
+const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const placeholderImage = require("../images/children/charlie.jpg");
 const CARD_RADIUS = 20;
 
@@ -108,6 +120,26 @@ const getLayoutIcon = (layoutMode: LayoutMode) => {
   return "apps-outline";
 };
 
+type ChildModalForm = {
+  displayName: string;
+  dateOfBirth: string;
+  sex: SexOption;
+  bloodType: string | null;
+  notes: string;
+  localPhotoUri: string | null;
+  uploadedPhotoUri: string | null;
+};
+
+const emptyForm = (): ChildModalForm => ({
+  displayName: "",
+  dateOfBirth: "",
+  sex: null,
+  bloodType: null,
+  notes: "",
+  localPhotoUri: null,
+  uploadedPhotoUri: null,
+});
+
 export default function Children({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
@@ -121,9 +153,17 @@ export default function Children({ navigation, route }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(1);
   const [selectedGridBabyId, setSelectedGridBabyId] = useState<number | null>(null);
-
-  // ── Baby photo map: { [baby_id]: sas_url | null } ───────
   const [babyPhotos, setBabyPhotos] = useState<Record<number, string | null>>({});
+
+  const [childModalVisible, setChildModalVisible] = useState(false);
+  const [childModalMode, setChildModalMode] = useState<ModalMode>("add");
+  const [editingBaby, setEditingBaby] = useState<BabyProfile | null>(null);
+  const [childSaving, setChildSaving] = useState(false);
+  const [childFeedback, setChildFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [childForm, setChildForm] = useState<ChildModalForm>(emptyForm());
 
   useEffect(() => {
     if (!babies || babies.length === 0) return;
@@ -148,11 +188,17 @@ export default function Children({ navigation, route }: Props) {
       setTimeout(() => setFeedback(null), 3000);
       navigation.setParams({ inviteMessage: undefined });
     }
-  }, [route?.params?.inviteMessage]);
+  }, [route?.params?.inviteMessage, navigation]);
 
   useEffect(() => {
     dispatch(fetchBabies());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!feedback || feedback.type !== "success") return;
+    const timeout = setTimeout(() => setFeedback(null), 2500);
+    return () => clearTimeout(timeout);
+  }, [feedback]);
 
   const filteredBabies = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -180,6 +226,209 @@ export default function Children({ navigation, route }: Props) {
     if (layoutMode === 1) return "100%";
     if (layoutMode === 2) return (available - gap) / 2;
     return (available - gap * 3) / 4;
+  };
+
+  const resetChildModal = useCallback(() => {
+    setChildModalVisible(false);
+    setEditingBaby(null);
+    setChildSaving(false);
+    setChildFeedback(null);
+    setChildForm(emptyForm());
+  }, []);
+
+  const handleDobChange = (text: string) => {
+    const digits = text.replace(/\D/g, "");
+    let formatted = digits;
+    if (digits.length >= 5) {
+      formatted = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+    } else if (digits.length >= 3) {
+      formatted = `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    }
+    setChildForm((prev) => ({ ...prev, dateOfBirth: formatted.slice(0, 10) }));
+  };
+
+  const openAddChildModal = () => {
+    setChildModalMode("add");
+    setEditingBaby(null);
+    setChildFeedback(null);
+    setChildForm(emptyForm());
+    setChildModalVisible(true);
+  };
+
+  const openEditChildModal = (baby: BabyProfile) => {
+    const existingPhoto = babyPhotos[baby.baby_id] ?? null;
+    setChildModalMode("edit");
+    setEditingBaby(baby);
+    setChildFeedback(null);
+    setChildForm({
+      displayName: baby.display_name ?? "",
+      dateOfBirth: baby.date_of_birth?.slice(0, 10) ?? "",
+      sex: baby.sex ?? null,
+      bloodType: baby.blood_type ?? null,
+      notes: baby.notes ?? "",
+      localPhotoUri: existingPhoto,
+      uploadedPhotoUri: existingPhoto,
+    });
+    setChildModalVisible(true);
+  };
+
+  const handlePickChildPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission Required",
+        "Photo library access is required to change the baby's profile picture."
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"] as any,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (result.canceled) return;
+
+    const imageUri = result.assets[0].uri;
+    setChildForm((prev) => ({
+      ...prev,
+      localPhotoUri: imageUri,
+    }));
+  };
+
+  const validateChildForm = () => {
+    if (!childForm.displayName.trim()) {
+      setChildFeedback({ type: "error", message: "Please enter the baby's name." });
+      return false;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(childForm.dateOfBirth)) {
+      setChildFeedback({
+        type: "error",
+        message: "Please enter a valid date (YYYY-MM-DD).",
+      });
+      return false;
+    }
+
+    const parsed = new Date(childForm.dateOfBirth);
+    if (isNaN(parsed.getTime()) || parsed > new Date()) {
+      setChildFeedback({
+        type: "error",
+        message: "Date of birth cannot be in the future.",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  const saveChild = async () => {
+    setChildFeedback(null);
+    if (!validateChildForm()) return;
+
+    setChildSaving(true);
+
+    try {
+      if (childModalMode === "add") {
+        const response = await createBaby({
+          display_name: childForm.displayName.trim(),
+          date_of_birth: childForm.dateOfBirth,
+          sex: childForm.sex ?? undefined,
+          blood_type: childForm.bloodType ?? undefined,
+          notes: childForm.notes.trim() || undefined,
+        });
+
+        if (!response?.success) {
+          setChildFeedback({
+            type: "error",
+            message: response?.message || "Failed to add baby.",
+          });
+          return;
+        }
+
+        const createdBabyId =
+          response?.data?.baby_id ??
+          response?.data?.id ??
+          response?.baby_id ??
+          null;
+
+        if (createdBabyId && childForm.localPhotoUri) {
+          try {
+            const uploadResult = await uploadBabyProfilePhoto(
+              createdBabyId,
+              childForm.localPhotoUri
+            );
+            if (uploadResult?.success && uploadResult.data?.sas_url) {
+              setBabyPhotos((prev) => ({
+                ...prev,
+                [createdBabyId]: uploadResult.data.sas_url,
+              }));
+            }
+          } catch {
+            // keep create successful even if photo upload fails
+          }
+        }
+
+        await dispatch(fetchBabies());
+        resetChildModal();
+        setFeedback({ type: "success", message: "Baby added successfully!" });
+        return;
+      }
+
+      if (!editingBaby) return;
+
+      const response = await updateBaby(editingBaby.baby_id, {
+        display_name: childForm.displayName.trim(),
+        date_of_birth: childForm.dateOfBirth,
+        sex: childForm.sex ?? undefined,
+        blood_type: childForm.bloodType ?? undefined,
+        notes: childForm.notes.trim() || undefined,
+      });
+
+      if (!(response?.success || response?.data)) {
+        setChildFeedback({
+          type: "error",
+          message: response?.message || "Update failed.",
+        });
+        return;
+      }
+
+      const originalPhoto = babyPhotos[editingBaby.baby_id] ?? null;
+      const pickedPhoto = childForm.localPhotoUri;
+
+      if (pickedPhoto && pickedPhoto !== originalPhoto) {
+        try {
+          const uploadResult = await uploadBabyProfilePhoto(
+            editingBaby.baby_id,
+            pickedPhoto
+          );
+          if (uploadResult?.success && uploadResult.data?.sas_url) {
+            setBabyPhotos((prev) => ({
+              ...prev,
+              [editingBaby.baby_id]: uploadResult.data.sas_url,
+            }));
+          }
+        } catch (e: any) {
+          Alert.alert(
+            "Photo Upload Failed",
+            e?.message ?? "The child was updated, but the photo could not be uploaded."
+          );
+        }
+      }
+
+      await dispatch(fetchBabies());
+      resetChildModal();
+      setFeedback({ type: "success", message: "Baby updated successfully!" });
+    } catch (e: any) {
+      setChildFeedback({
+        type: "error",
+        message: e?.message ?? "Something went wrong.",
+      });
+    } finally {
+      setChildSaving(false);
+    }
   };
 
   const renderLargeCard = (baby: BabyProfile) => {
@@ -264,7 +513,7 @@ export default function Children({ navigation, route }: Props) {
             <TouchableOpacity
               style={styles.editButton}
               activeOpacity={0.85}
-              onPress={() => navigation.navigate("EditChild", { id: baby.baby_id })}
+              onPress={() => openEditChildModal(baby)}
             >
               <Ionicons
                 name="settings-outline"
@@ -285,7 +534,7 @@ export default function Children({ navigation, route }: Props) {
     const photoUri = babyPhotos[baby.baby_id];
 
     return (
-      <View key={baby.baby_id} style={[styles.twoUpCard, { width: cardWidth }]}>
+      <View key={baby.baby_id} style={[styles.twoUpCard, { width: cardWidth as number }]}>
         <View style={styles.cardTopAccent} />
 
         <Image
@@ -338,7 +587,7 @@ export default function Children({ navigation, route }: Props) {
             <TouchableOpacity
               style={styles.twoUpIconButtonSecondary}
               activeOpacity={0.85}
-              onPress={() => navigation.navigate("EditChild", { id: baby.baby_id })}
+              onPress={() => openEditChildModal(baby)}
             >
               <Ionicons name="settings-outline" size={moderateScale(17)} color="#4f6175" />
             </TouchableOpacity>
@@ -359,7 +608,7 @@ export default function Children({ navigation, route }: Props) {
         activeOpacity={0.9}
         style={[
           styles.compactCard,
-          { width: cardWidth },
+          { width: cardWidth as number },
           isSelected && styles.compactCardSelected,
         ]}
         onPress={() =>
@@ -436,7 +685,7 @@ export default function Children({ navigation, route }: Props) {
 
             <TouchableOpacity style={styles.menuButton} activeOpacity={0.85} onPress={cycleLayout}>
               <Ionicons
-                name={getLayoutIcon(layoutMode)}
+                name={getLayoutIcon(layoutMode) as any}
                 size={moderateScale(24)}
                 color="#4f6175"
               />
@@ -585,9 +834,7 @@ export default function Children({ navigation, route }: Props) {
                 <TouchableOpacity
                   style={styles.bottomEditButton}
                   activeOpacity={0.85}
-                  onPress={() =>
-                    navigation.navigate("EditChild", { id: selectedGridBaby.baby_id })
-                  }
+                  onPress={() => openEditChildModal(selectedGridBaby)}
                 >
                   <Ionicons
                     name="settings-outline"
@@ -604,7 +851,7 @@ export default function Children({ navigation, route }: Props) {
           <TouchableOpacity
             style={styles.fab}
             activeOpacity={0.9}
-            onPress={() => navigation.navigate("AddChild")}
+            onPress={openAddChildModal}
           >
             <View style={styles.fabInner}>
               <Ionicons name="add" size={moderateScale(30)} color="#ffffff" />
@@ -612,7 +859,263 @@ export default function Children({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </Pressable>
+
+      <ChildEditModal
+        visible={childModalVisible}
+        mode={childModalMode}
+        form={childForm}
+        saving={childSaving}
+        feedback={childFeedback}
+        onClose={resetChildModal}
+        onPickPhoto={handlePickChildPhoto}
+        onNameChange={(v) => setChildForm((prev) => ({ ...prev, displayName: v }))}
+        onDobChange={handleDobChange}
+        onSexChange={(v) => setChildForm((prev) => ({ ...prev, sex: prev.sex === v ? null : v }))}
+        onBloodTypeChange={(v) =>
+          setChildForm((prev) => ({
+            ...prev,
+            bloodType: prev.bloodType === v ? null : v,
+          }))
+        }
+        onNotesChange={(v) => setChildForm((prev) => ({ ...prev, notes: v }))}
+        onSave={saveChild}
+      />
     </View>
+  );
+}
+
+type ChildEditModalProps = {
+  visible: boolean;
+  mode: ModalMode;
+  form: ChildModalForm;
+  saving: boolean;
+  feedback: { type: "success" | "error"; message: string } | null;
+  onClose: () => void;
+  onPickPhoto: () => void;
+  onNameChange: (v: string) => void;
+  onDobChange: (v: string) => void;
+  onSexChange: (v: SexOption) => void;
+  onBloodTypeChange: (v: string) => void;
+  onNotesChange: (v: string) => void;
+  onSave: () => void;
+};
+
+function ChildEditModal({
+  visible,
+  mode,
+  form,
+  saving,
+  feedback,
+  onClose,
+  onPickPhoto,
+  onNameChange,
+  onDobChange,
+  onSexChange,
+  onBloodTypeChange,
+  onNotesChange,
+  onSave,
+}: ChildEditModalProps) {
+  const title = mode === "add" ? "Add Child" : "Edit Child";
+  const subtitle =
+    mode === "add"
+      ? "Create a child profile with quick details"
+      : "Update child information and photo";
+
+  const shownPhoto = form.localPhotoUri || form.uploadedPhotoUri;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <LinearGradient
+            colors={["#8DBCF1", "#79ADDF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.modalHero}
+          >
+            <View style={styles.modalHeroCompactRow}>
+              <View style={styles.modalHeroLeft}>
+                <View style={styles.modalHeroIconWrap}>
+                  <Ionicons name="person-outline" size={22} color="#FFFFFF" />
+                </View>
+
+                <View style={styles.modalHeroTextWrap}>
+                  <Text style={styles.modalHeroTitleCompact}>{title}</Text>
+                  <Text style={styles.modalHeroSubtitleCompact}>{subtitle}</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity onPress={onClose} style={styles.modalCloseButtonCompact}>
+                <Ionicons name="close" size={22} color="#5F6E7E" />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalScrollContent}
+          >
+            {feedback && (
+              <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                  {feedback.message}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>Photo</Text>
+
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={styles.photoPickerButton}
+                onPress={onPickPhoto}
+              >
+                {shownPhoto ? (
+                  <Image source={{ uri: shownPhoto }} style={styles.modalPhotoPreview} />
+                ) : (
+                  <View style={styles.photoPlaceholderInner}>
+                    <Ionicons name="camera-outline" size={moderateScale(28)} color="#5F8FC8" />
+                    <Text style={styles.photoPlaceholderText}>Tap to add photo</Text>
+                  </View>
+                )}
+
+                <View style={styles.photoBadge}>
+                  <Ionicons name="camera" size={moderateScale(12)} color="#fff" />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>
+                Baby's Name <Text style={styles.requiredStar}>*</Text>
+              </Text>
+              <TextInput
+                value={form.displayName}
+                onChangeText={onNameChange}
+                placeholder="e.g. Emma Johnson"
+                placeholderTextColor="#9AA8B6"
+                style={styles.modalInput}
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>
+                Date of Birth <Text style={styles.requiredStar}>*</Text>
+              </Text>
+              <TextInput
+                value={form.dateOfBirth}
+                onChangeText={onDobChange}
+                placeholder="e.g. 2024-10-14"
+                placeholderTextColor="#9AA8B6"
+                style={styles.modalInput}
+                keyboardType="numeric"
+                maxLength={10}
+              />
+            </View>
+
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>Sex</Text>
+              <View style={styles.modalChipWrap}>
+                {(["male", "female"] as SexOption[]).map((s) => (
+                  <TouchableOpacity
+                    key={s as string}
+                    onPress={() => onSexChange(s)}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.modalTypeChip,
+                      form.sex === s && styles.modalTypeChipActive,
+                    ]}
+                  >
+                    <Ionicons
+                      name={s === "male" ? "male-outline" : "female-outline"}
+                      size={moderateScale(14)}
+                      color={form.sex === s ? "#fff" : "#5F8FC8"}
+                      style={{ marginRight: 5 }}
+                    />
+                    <Text
+                      style={[
+                        styles.modalTypeChipText,
+                        form.sex === s && styles.modalTypeChipTextActive,
+                      ]}
+                    >
+                      {s === "male" ? "Male" : "Female"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>Blood Type</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.modalChipRow}>
+                  {BLOOD_TYPES.map((bt) => (
+                    <TouchableOpacity
+                      key={bt}
+                      onPress={() => onBloodTypeChange(bt)}
+                      activeOpacity={0.85}
+                      style={[
+                        styles.modalTypeChip,
+                        form.bloodType === bt && styles.modalTypeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modalTypeChipText,
+                          form.bloodType === bt && styles.modalTypeChipTextActive,
+                        ]}
+                      >
+                        {bt}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            <View style={styles.modalSectionCard}>
+              <Text style={styles.modalSectionLabel}>Notes</Text>
+              <TextInput
+                value={form.notes}
+                onChangeText={onNotesChange}
+                placeholder="Any additional notes..."
+                placeholderTextColor="#9AA8B6"
+                multiline
+                numberOfLines={4}
+                style={[styles.modalInput, styles.modalInputMultiline]}
+              />
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity onPress={onClose} style={styles.modalCancelBtn} activeOpacity={0.85}>
+              <Text style={styles.modalCancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onSave}
+              disabled={saving}
+              activeOpacity={0.85}
+              style={[
+                styles.modalSaveBtn,
+                saving && styles.modalSaveBtnDisabled,
+              ]}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.modalSaveBtnText}>
+                  {mode === "add" ? "Add Child" : "Save Changes"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1102,8 +1605,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 20,
     minHeight: verticalScale(420),
-
-    zIndex: 20,        
+    zIndex: 20,
   },
 
   bottomSheetHandle: {
@@ -1225,37 +1727,39 @@ const styles = StyleSheet.create({
 
   fab: {
     position: "absolute",
-    right: width * 0.08,
-    bottom: verticalScale(130),
+    right: scale(20),
+    bottom: verticalScale(120),
+    zIndex: 30,
   },
 
   fabInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: moderateScale(62),
+    height: moderateScale(62),
+    borderRadius: moderateScale(31),
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
     shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 8,
   },
 
   feedbackSuccess: {
     backgroundColor: colors.successLight,
     borderLeftWidth: 4,
     borderLeftColor: colors.successBorder,
-    borderRadius: moderateScale(8),
-    paddingHorizontal: moderateScale(12),
-    paddingVertical: verticalScale(10),
-    marginBottom: verticalScale(10),
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: scale(10),
+    marginTop: verticalScale(10),
   },
 
   feedbackSuccessText: {
-    fontSize: moderateScale(13),
-    fontWeight: "500" as const,
+    fontSize: 13,
+    fontWeight: "500",
     color: colors.successDark,
   },
 
@@ -1263,15 +1767,254 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorLight,
     borderLeftWidth: 4,
     borderLeftColor: colors.errorBorder,
-    borderRadius: moderateScale(8),
-    paddingHorizontal: moderateScale(12),
-    paddingVertical: verticalScale(10),
-    marginBottom: verticalScale(10),
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: scale(10),
+    marginTop: verticalScale(10),
   },
 
   feedbackErrorText: {
-    fontSize: moderateScale(13),
-    fontWeight: "500" as const,
+    fontSize: 13,
+    fontWeight: "500",
     color: colors.errorDark,
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.38)",
+    justifyContent: "flex-end",
+  },
+
+  modalCard: {
+    maxHeight: "92%",
+    backgroundColor: "#F7FAFC",
+    borderTopLeftRadius: moderateScale(26),
+    borderTopRightRadius: moderateScale(26),
+    overflow: "hidden",
+  },
+
+  modalHero: {
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(14),
+    paddingBottom: verticalScale(14),
+  },
+
+  modalHeroCompactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: scale(10),
+  },
+
+  modalHeroLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+
+  modalHeroIconWrap: {
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(21),
+    backgroundColor: "rgba(255,255,255,0.22)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: scale(10),
+  },
+
+  modalHeroTextWrap: {
+    flex: 1,
+  },
+
+  modalHeroTitleCompact: {
+    fontSize: moderateScale(18),
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  modalHeroSubtitleCompact: {
+    marginTop: verticalScale(2),
+    fontSize: moderateScale(12),
+    color: "#EDF6FF",
+  },
+
+  modalCloseButtonCompact: {
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
+    backgroundColor: "#F3F6F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalScrollContent: {
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(14),
+  },
+
+  modalSectionCard: {
+    backgroundColor: "#EEF4F8",
+    borderRadius: moderateScale(16),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(12),
+    marginBottom: verticalScale(10),
+  },
+
+  modalSectionLabel: {
+    fontSize: moderateScale(13),
+    fontWeight: "800",
+    color: "#5F6E7E",
+    marginBottom: verticalScale(8),
+  },
+
+  requiredStar: {
+    color: "#E35D5B",
+  },
+
+  modalChipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: scale(8),
+  },
+
+  modalChipRow: {
+    flexDirection: "row",
+    gap: scale(8),
+    alignItems: "center",
+  },
+
+  modalTypeChip: {
+    minHeight: verticalScale(36),
+    borderRadius: moderateScale(18),
+    borderWidth: 1,
+    borderColor: "#BDD0E3",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: scale(14),
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+  },
+
+  modalTypeChipActive: {
+    backgroundColor: "#8DBCF1",
+    borderColor: "#8DBCF1",
+  },
+
+  modalTypeChipText: {
+    fontSize: moderateScale(12),
+    fontWeight: "700",
+    color: "#5F6E7E",
+  },
+
+  modalTypeChipTextActive: {
+    color: "#FFFFFF",
+  },
+
+  modalInput: {
+    minHeight: verticalScale(46),
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: scale(12),
+    fontSize: moderateScale(14),
+    color: "#444444",
+  },
+
+  modalInputMultiline: {
+    minHeight: verticalScale(96),
+    paddingTop: verticalScale(12),
+    textAlignVertical: "top",
+  },
+
+  photoPickerButton: {
+    alignSelf: "center",
+    width: moderateScale(116),
+    height: moderateScale(116),
+    borderRadius: moderateScale(58),
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#BDD0E3",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  modalPhotoPreview: {
+    width: "100%",
+    height: "100%",
+  },
+
+  photoPlaceholderInner: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: scale(8),
+  },
+
+  photoPlaceholderText: {
+    marginTop: verticalScale(6),
+    fontSize: moderateScale(11),
+    fontWeight: "700",
+    color: "#5F8FC8",
+    textAlign: "center",
+  },
+
+  photoBadge: {
+    position: "absolute",
+    bottom: scale(4),
+    right: scale(4),
+    width: moderateScale(24),
+    height: moderateScale(24),
+    borderRadius: moderateScale(12),
+    backgroundColor: "#8DBCF1",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+
+  modalFooter: {
+    flexDirection: "row",
+    gap: scale(10),
+    paddingHorizontal: scale(14),
+    paddingTop: verticalScale(8),
+    paddingBottom: verticalScale(18),
+    backgroundColor: "#EEF4F8",
+  },
+
+  modalCancelBtn: {
+    flex: 1,
+    minHeight: verticalScale(50),
+    borderRadius: moderateScale(16),
+    backgroundColor: "#E6EBF0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalCancelBtnText: {
+    fontSize: moderateScale(14),
+    fontWeight: "800",
+    color: "#66717C",
+  },
+
+  modalSaveBtn: {
+    flex: 1.35,
+    minHeight: verticalScale(50),
+    borderRadius: moderateScale(16),
+    backgroundColor: "#8DBCF1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalSaveBtnDisabled: {
+    backgroundColor: "#B8C7D6",
+  },
+
+  modalSaveBtnText: {
+    fontSize: moderateScale(14),
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
 });
