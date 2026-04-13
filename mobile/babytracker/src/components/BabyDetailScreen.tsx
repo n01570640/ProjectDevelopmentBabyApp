@@ -10,10 +10,14 @@ import {
   Dimensions,
   Platform,
   Modal,
+  Image,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as ImagePicker from "expo-image-picker";
 import { getBaby, updateBaby, getLatestGrowth, recordGrowth } from "../../services/babyService";
+import { getBabyProfilePhoto, uploadBabyProfilePhoto } from "../../services/babyProfilePhotoService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
@@ -68,6 +72,10 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [growthModalVisible, setGrowthModalVisible] = useState(false);
 
+  // ── Baby profile photo state ─────────────────────────────
+  const [babyPhotoUri, setBabyPhotoUri] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+
   // ── Fetch baby + latest growth
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,6 +94,57 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
   }, [babyId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Fetch saved baby photo on mount ─────────────────────
+  const fetchBabyPhoto = useCallback(async () => {
+    try {
+      const result = await getBabyProfilePhoto(babyId);
+      if (result?.success && result.data?.sas_url) {
+        setBabyPhotoUri(result.data.sas_url);
+      }
+    } catch (e) {
+      console.error("BabyDetailScreen: failed to fetch baby profile photo", e);
+    }
+  }, [babyId]);
+
+  useEffect(() => { fetchBabyPhoto(); }, [fetchBabyPhoto]);
+
+  // ── Pick image and upload ────────────────────────────────
+  const handleAvatarPress = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission Required", "Photo library access is required to change the baby's profile picture.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (result.canceled) return;
+
+    const imageUri = result.assets[0].uri;
+    setBabyPhotoUri(imageUri); // optimistic update
+    setPhotoUploading(true);
+
+    try {
+      const uploadResult = await uploadBabyProfilePhoto(babyId, imageUri);
+      if (uploadResult?.success && uploadResult.data?.sas_url) {
+        setBabyPhotoUri(uploadResult.data.sas_url);
+      } else {
+        Alert.alert("Upload Failed", uploadResult?.message ?? "Could not upload photo. Please try again.");
+        fetchBabyPhoto();
+      }
+    } catch (e: any) {
+      Alert.alert("Upload Failed", e?.message ?? "An error occurred uploading the photo.");
+      fetchBabyPhoto();
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -125,14 +184,34 @@ export default function BabyDetailScreen({ navigation, route }: Props) {
           <Ionicons name="arrow-back" size={moderateScale(22)} color="#1a3d5c" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          {/* Avatar */}
-          <View style={[styles.avatar, { borderColor: accentColor }]}>
-            <Ionicons
-              name={isMale ? "man-outline" : "woman-outline"}
-              size={moderateScale(44)}
-              color={accentColor}
-            />
-          </View>
+          {/* Avatar — tap to change photo */}
+          <TouchableOpacity
+            onPress={handleAvatarPress}
+            activeOpacity={0.8}
+            style={[styles.avatar, { borderColor: accentColor }]}
+          >
+            {babyPhotoUri ? (
+              <Image
+                source={{ uri: babyPhotoUri }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Ionicons
+                name={isMale ? "man-outline" : "woman-outline"}
+                size={moderateScale(44)}
+                color={accentColor}
+              />
+            )}
+            {photoUploading && (
+              <View style={styles.avatarUploadingOverlay}>
+                <ActivityIndicator size="small" color="#fff" />
+              </View>
+            )}
+            {/* Camera badge */}
+            <View style={[styles.avatarCameraBadge, { backgroundColor: accentColor }]}>
+              <Ionicons name="camera" size={moderateScale(10)} color="#fff" />
+            </View>
+          </TouchableOpacity>
           <Text style={styles.babyName}>{baby.display_name}</Text>
           <Text style={styles.babyAge}>{ageFromDob(baby.date_of_birth)}</Text>
           <View style={[styles.roleBadge, { backgroundColor: accentColor }]}>
@@ -766,6 +845,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: verticalScale(10),
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: moderateScale(45),
+  },
+  avatarUploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: moderateScale(45),
+  },
+  avatarCameraBadge: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: moderateScale(20),
+    height: moderateScale(20),
+    borderRadius: moderateScale(10),
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#fff",
   },
   babyName: {
     fontSize: moderateScale(24),

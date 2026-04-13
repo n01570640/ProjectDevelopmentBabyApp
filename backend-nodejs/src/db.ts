@@ -10,7 +10,15 @@ const config: sql.config = {
   database: process.env.DB_NAME,
   options: {
     encrypt: true,
-    trustServerCertificate: false
+    trustServerCertificate: false,
+    connectionTimeout: 30000, // 30 seconds
+    requestTimeout: 30000,    // 30 seconds for queries
+    cancelTimeout: 5000,      // 5 seconds
+    pool: {
+      max: 10,                // Max connections in pool
+      min: 0,
+      idleTimeoutMillis: 30000 // Close idle connections after 30s
+    }
   }
 };
 
