@@ -19,10 +19,11 @@ import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { useAppSelector, useAppDispatch } from "../store/hooks";
 import { fetchTasks } from "../store/slices/tasksSlice";
 import { fetchActivities } from "../store/slices/activitiesSlice";
+import { getBabyGraphs } from "../../services/analyticsService";
 
 const { width } = Dimensions.get("window");
 
-type MetricType = "weight" | "height" | "sleep";
+type MetricType = "weight" | "height";
 
 type ChartDataset = {
   data: number[];
@@ -37,32 +38,22 @@ type MetricChartData = {
 
 const defaultChartData: Record<MetricType, MetricChartData> = {
   weight: {
-    labels: ["W1", "W2", "W3", "W4", "W5"],
+    labels: [],
     datasets: [
       {
-        data: [3.5, 3.8, 4.1, 4.4, 4.7],
+        data: [],
         strokeWidth: 3,
         color: (opacity = 1) => `rgba(255, 107, 107, ${opacity})`,
       },
     ],
   },
   height: {
-    labels: ["W1", "W2", "W3", "W4", "W5"],
+    labels: [],
     datasets: [
       {
-        data: [50, 51, 52, 53, 54],
+        data: [],
         strokeWidth: 3,
         color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-      },
-    ],
-  },
-  sleep: {
-    labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-    datasets: [
-      {
-        data: [8, 7.5, 8.5, 9, 8.5, 9.5, 8.8],
-        strokeWidth: 3,
-        color: (opacity = 1) => `rgba(102, 204, 102, ${opacity})`,
       },
     ],
   },
@@ -83,32 +74,42 @@ const makeChartData = (
   ],
 });
 
-const transformDbDataToChartData = (dbData: any): Record<MetricType, MetricChartData> => ({
-  weight: dbData?.weight
-    ? makeChartData(dbData.weight.labels, dbData.weight.values, (opacity) => `rgba(255, 107, 107, ${opacity})`)
-    : defaultChartData.weight,
-  height: dbData?.height
-    ? makeChartData(dbData.height.labels, dbData.height.values, (opacity) => `rgba(74, 144, 226, ${opacity})`)
-    : defaultChartData.height,
-  sleep: dbData?.sleep
-    ? makeChartData(dbData.sleep.labels, dbData.sleep.values, (opacity) => `rgba(102, 204, 102, ${opacity})`)
-    : defaultChartData.sleep,
-});
+const formatChartLabel = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+};
 
-const getChartDataForMetric = (metric: MetricType, data: MetricChartData) => {
-  const maxPoints = metric === "sleep" ? data.labels.length : 5;
-  const dataset = data.datasets[0];
+const transformDbDataToChartData = (dbData: any): Record<MetricType, MetricChartData> => {
+  const growthData = Array.isArray(dbData?.growth_over_time) ? dbData.growth_over_time : [];
+  const sortedGrowth = [...growthData].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  );
+
+  const weightPoints = sortedGrowth.filter(
+    (point) => point.weight_kg !== null && point.weight_kg !== undefined
+  );
+  const heightPoints = sortedGrowth.filter(
+    (point) => point.length_cm !== null && point.length_cm !== undefined
+  );
 
   return {
-    labels: data.labels.slice(-maxPoints),
-    datasets: [
-      {
-        ...dataset,
-        data: dataset.data.slice(-maxPoints),
-      },
-    ],
+    weight: makeChartData(
+      weightPoints.map((point) => formatChartLabel(point.recorded_at)),
+      weightPoints.map((point) => Number(point.weight_kg)),
+      (opacity) => `rgba(255, 107, 107, ${opacity})`
+    ),
+    height: makeChartData(
+      heightPoints.map((point) => formatChartLabel(point.recorded_at)),
+      heightPoints.map((point) => Number(point.length_cm)),
+      (opacity) => `rgba(74, 144, 226, ${opacity})`
+    ),
   };
 };
+
+const getChartDataForMetric = (metric: MetricType, data: MetricChartData) => data;
 
 export default function StatisticsScreen() {
   const insets = useSafeAreaInsets();
@@ -123,6 +124,8 @@ export default function StatisticsScreen() {
 
   // Get the first baby or selected baby
   const [selectedBaby, setSelectedBaby] = useState<any>(null);
+  const [loadingChartData, setLoadingChartData] = useState(false);
+  const [chartError, setChartError] = useState<string | null>(null);
 
   // Set initial baby when babies load
   useEffect(() => {
@@ -141,17 +144,31 @@ export default function StatisticsScreen() {
     }
   }, [babies, selectedBaby]);
 
-  // Fetch tasks and activities when baby changes
+  // Fetch tasks, activities, and analytics chart data when baby changes
   useEffect(() => {
-    if (selectedBaby?.baby_id) {
-      dispatch(fetchTasks(selectedBaby.baby_id));
-      dispatch(fetchActivities(selectedBaby.baby_id));
-
-      // Placeholder for future DB-driven chart data:
-      // fetchChartHistory(selectedBaby.baby_id).then((dbData) => {
-      //   setMetricData(transformDbDataToChartData(dbData));
-      // });
+    if (!selectedBaby?.baby_id) {
+      return;
     }
+
+    dispatch(fetchTasks(selectedBaby.baby_id));
+    dispatch(fetchActivities(selectedBaby.baby_id));
+
+    const fetchGraphData = async () => {
+      setLoadingChartData(true);
+      setChartError(null);
+
+      const response = await getBabyGraphs(selectedBaby.baby_id);
+      if (response?.success && response.data) {
+        setMetricData(transformDbDataToChartData(response.data));
+      } else {
+        setMetricData(defaultChartData);
+        setChartError(response?.message || "Unable to load chart data.");
+      }
+
+      setLoadingChartData(false);
+    };
+
+    fetchGraphData();
   }, [selectedBaby?.baby_id, dispatch]);
 
   // Refresh data every time the page/screen comes into focus
@@ -197,8 +214,8 @@ export default function StatisticsScreen() {
         return "Weight (kg)";
       case "height":
         return "Height (cm)";
-      case "sleep":
-        return "Sleep (hours)";
+      default:
+        return "";
     }
   };
 
@@ -208,12 +225,21 @@ export default function StatisticsScreen() {
         return "kg";
       case "height":
         return "cm";
-      case "sleep":
-        return "hrs";
+      default:
+        return "";
     }
   };
 
   const filteredChartData = getChartDataForMetric(selectedMetric, metricData[selectedMetric]);
+  const chartValues = filteredChartData.datasets[0].data;
+  const hasChartData = chartValues.length > 0 && filteredChartData.labels.length > 0;
+  const chartWidth = Math.max(width - scale(24), filteredChartData.labels.length * scale(70));
+  const latestChartValue = hasChartData ? chartValues[chartValues.length - 1] : 0;
+  const averageChartValue = hasChartData
+    ? chartValues.reduce((a, b) => a + b, 0) / chartValues.length
+    : 0;
+  const changeChartValue = hasChartData ? latestChartValue - chartValues[0] : 0;
+  const changeColor = hasChartData && chartValues[chartValues.length - 1] >= chartValues[0] ? "#4CAF50" : "#F44336";
 
   const currentDateLabel = new Date().toLocaleDateString(undefined, {
     weekday: "short",
@@ -336,22 +362,7 @@ export default function StatisticsScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.toggleButton,
-              selectedMetric === "sleep" && styles.toggleButtonActive,
-            ]}
-            onPress={() => setSelectedMetric("sleep")}
-          >
-            <Text
-              style={[
-                styles.toggleButtonText,
-                selectedMetric === "sleep" && styles.toggleButtonTextActive,
-              ]}
-            >
-              Sleep
-            </Text>
-          </TouchableOpacity>
+
         </View>
 
         {/* Chart Card */}
@@ -363,52 +374,65 @@ export default function StatisticsScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chartScrollContainer}
           >
-            <LineChart
-              data={filteredChartData}
-              width={Math.max(width - scale(24), 350)}
-              height={verticalScale(200)}
-              chartConfig={{
-                backgroundColor: "#ffffff",
-                backgroundGradientFrom: "#ffffff",
-                backgroundGradientTo: "#ffffff",
-                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                strokeWidth: 2,
-                propsForLabels: {
-                  fontSize: 11,
-                  fontFamily: "System",
-                },
-              }}
-              style={styles.chart}
-              bezier
-              withDots={true}
-              withInnerLines={true}
-              withOuterLines={true}
-              withVerticalLabels={true}
-              withHorizontalLabels={true}
-            />
+            {loadingChartData ? (
+              <View
+                style={[
+                  styles.emptyState,
+                  { width: chartWidth, minHeight: verticalScale(200) },
+                ]}
+              >
+                <Text style={styles.emptyStateText}>Loading chart data...</Text>
+              </View>
+            ) : hasChartData ? (
+              <LineChart
+                data={filteredChartData}
+                width={chartWidth}
+                height={verticalScale(200)}
+                chartConfig={{
+                  backgroundColor: "#ffffff",
+                  backgroundGradientFrom: "#ffffff",
+                  backgroundGradientTo: "#ffffff",
+                  color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                  strokeWidth: 2,
+                  propsForLabels: {
+                    fontSize: 11,
+                    fontFamily: "System",
+                  },
+                }}
+                style={styles.chart}
+                bezier
+                withDots={true}
+                withInnerLines={true}
+                withOuterLines={true}
+                withVerticalLabels={true}
+                withHorizontalLabels={true}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.emptyState,
+                  { width: chartWidth, minHeight: verticalScale(200) },
+                ]}
+              >
+                <Text style={styles.emptyStateText}>
+                  {chartError ?? "No growth history available yet."}
+                </Text>
+              </View>
+            )}
           </ScrollView>
 
           <View style={styles.chartStats}>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Latest</Text>
               <Text style={styles.statValue}>
-                {filteredChartData.datasets[0].data[
-                  filteredChartData.datasets[0].data.length - 1
-                ]}{" "}
-                {getMetricUnit(selectedMetric)}
+                {latestChartValue.toFixed(1)} {getMetricUnit(selectedMetric)}
               </Text>
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Average</Text>
               <Text style={styles.statValue}>
-                {(
-                  filteredChartData.datasets[0].data.reduce(
-                    (a, b) => a + b,
-                    0
-                  ) / filteredChartData.datasets[0].data.length
-                ).toFixed(1)}{" "}
-                {getMetricUnit(selectedMetric)}
+                {averageChartValue.toFixed(1)} {getMetricUnit(selectedMetric)}
               </Text>
             </View>
             <View style={styles.statItem}>
@@ -417,22 +441,12 @@ export default function StatisticsScreen() {
                 style={[
                   styles.statValue,
                   {
-                    color:
-                      metricData[selectedMetric].datasets[0].data[
-                        metricData[selectedMetric].datasets[0].data.length - 1
-                      ] >
-                      metricData[selectedMetric].datasets[0].data[0]
-                        ? "#4CAF50"
-                        : "#F44336",
+                    color: changeColor,
                   },
                 ]}
               >
-                +
-                {(
-                  filteredChartData.datasets[0].data[
-                    filteredChartData.datasets[0].data.length - 1
-                  ] - filteredChartData.datasets[0].data[0]
-                ).toFixed(1)}
+                {changeChartValue >= 0 ? "+" : ""}
+                {changeChartValue.toFixed(1)}
               </Text>
             </View>
           </View>
