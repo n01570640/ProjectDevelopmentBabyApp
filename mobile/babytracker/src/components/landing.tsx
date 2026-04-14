@@ -168,29 +168,6 @@ export default function Landing({ navigation }: Props) {
           <Text style={styles.inviteLinkText}>Have an invitation?</Text>
         </TouchableOpacity>
 
-        {/* Store logos */}
-        <LinearGradient
-          colors={gradients.background}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.storeContainer}
-        >
-          <Image
-            source={require('../images/landingPage/github.png')}
-            style={styles.storeIcon}
-            resizeMode="contain"
-          />
-          <Image
-            source={require('../images/landingPage/playStore.png')}
-            style={styles.storeIcon}
-            resizeMode="contain"
-          />
-          <Image
-            source={require('../images/landingPage/appStore.png')}
-            style={styles.storeIcon}
-            resizeMode="contain"
-          />
-        </LinearGradient>
       </ScrollView>
 
       {/* Invitation Modal */}

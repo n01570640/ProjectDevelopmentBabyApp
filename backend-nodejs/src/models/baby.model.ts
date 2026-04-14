@@ -127,21 +127,25 @@ export async function deleteBaby(baby_id: number): Promise<boolean> {
   try {
     await transaction.begin();
 
-    await new sql.Request(transaction)
-      .input("baby_id", sql.BigInt, baby_id)
-      .query(`DELETE FROM share_invites WHERE baby_id = @baby_id`);
+    const childTables = [
+      "share_invites",
+      "baby_vaccinations",
+      "growth_metrics",
+      "activities",
+      "reminders",
+      "tasks",
+      "symptom_logs",
+      "medications",
+      "notifications_log",
+      "baby_profile_photos",
+      "caregiver_baby_access",
+    ];
 
-    await new sql.Request(transaction)
-      .input("baby_id", sql.BigInt, baby_id)
-      .query(`DELETE FROM baby_vaccinations WHERE baby_id = @baby_id`);
-
-    await new sql.Request(transaction)
-      .input("baby_id", sql.BigInt, baby_id)
-      .query(`DELETE FROM growth_metrics WHERE baby_id = @baby_id`);
-
-    await new sql.Request(transaction)
-      .input("baby_id", sql.BigInt, baby_id)
-      .query(`DELETE FROM caregiver_baby_access WHERE baby_id = @baby_id`);
+    for (const table of childTables) {
+      await new sql.Request(transaction)
+        .input("baby_id", sql.BigInt, baby_id)
+        .query(`DELETE FROM ${table} WHERE baby_id = @baby_id`);
+    }
 
     const result = await new sql.Request(transaction)
       .input("baby_id", sql.BigInt, baby_id)

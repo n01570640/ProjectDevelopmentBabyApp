@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -20,11 +20,12 @@ import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppSelector, useAppDispatch } from "../store/hooks";
 import { fetchBabies } from "../store/slices/babiesSlice";
-import { createBaby, updateBaby } from "../../services/babyService";
+import { createBaby, updateBaby, deleteBaby } from "../../services/babyService";
 import {
   getBabyProfilePhoto,
   uploadBabyProfilePhoto,
 } from "../../services/babyProfilePhotoService";
+import { useFocusEffect } from "@react-navigation/native";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
@@ -165,7 +166,11 @@ export default function Children({ navigation, route }: Props) {
   } | null>(null);
   const [childForm, setChildForm] = useState<ChildModalForm>(emptyForm());
 
-  useEffect(() => {
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [childDeleting, setChildDeleting] = useState(false);
+
+  const loadBabyPhotos = useCallback(() => {
     if (!babies || babies.length === 0) return;
     babies.forEach(async (baby: BabyProfile) => {
       try {
@@ -180,6 +185,12 @@ export default function Children({ navigation, route }: Props) {
       }
     });
   }, [babies]);
+
+  // Fetch photos on initial load and when babies list changes
+  useEffect(() => { loadBabyPhotos(); }, [loadBabyPhotos]);
+
+  // Re-fetch photos when navigating back to this screen
+  useFocusEffect(useCallback(() => { loadBabyPhotos(); }, [loadBabyPhotos]));
 
   useEffect(() => {
     const inviteMessage = route?.params?.inviteMessage;
@@ -351,7 +362,6 @@ export default function Children({ navigation, route }: Props) {
         const createdBabyId =
           response?.data?.baby_id ??
           response?.data?.id ??
-          response?.baby_id ??
           null;
 
         if (createdBabyId && childForm.localPhotoUri) {
@@ -431,6 +441,77 @@ export default function Children({ navigation, route }: Props) {
     }
   };
 
+  const isPrimaryCaregiverForEditing =
+    editingBaby?.access_role === "PRIMARY_CAREGIVER";
+
+  const openDeleteConfirm = () => {
+    setDeleteConfirmName("");
+    setDeleteConfirmVisible(true);
+  };
+
+  const closeDeleteConfirm = () => {
+    if (childDeleting) return;
+    setDeleteConfirmVisible(false);
+    setDeleteConfirmName("");
+  };
+
+  const confirmDeleteChild = async () => {
+    if (!editingBaby) return;
+
+    if (isPrimaryCaregiverForEditing) {
+      const typed = deleteConfirmName.trim().toLowerCase();
+      const expected = (editingBaby.display_name ?? "").trim().toLowerCase();
+      if (!typed || typed !== expected) {
+        setChildFeedback({
+          type: "error",
+          message: "Please type the child's name exactly to confirm deletion.",
+        });
+        return;
+      }
+    }
+
+    setChildDeleting(true);
+    setChildFeedback(null);
+
+    try {
+      const response = await deleteBaby(editingBaby.baby_id);
+      if (!response?.success) {
+        setChildFeedback({
+          type: "error",
+          message: response?.message ?? "Failed to delete child.",
+        });
+        return;
+      }
+
+      if (selectedGridBabyId === editingBaby.baby_id) {
+        setSelectedGridBabyId(null);
+      }
+      setBabyPhotos((prev) => {
+        const next = { ...prev };
+        delete next[editingBaby.baby_id];
+        return next;
+      });
+
+      await dispatch(fetchBabies());
+      setDeleteConfirmVisible(false);
+      setDeleteConfirmName("");
+      resetChildModal();
+      setFeedback({
+        type: "success",
+        message: isPrimaryCaregiverForEditing
+          ? "Child deleted successfully."
+          : "Your access has been removed.",
+      });
+    } catch (e: any) {
+      setChildFeedback({
+        type: "error",
+        message: e?.message ?? "Something went wrong deleting this child.",
+      });
+    } finally {
+      setChildDeleting(false);
+    }
+  };
+
   const renderLargeCard = (baby: BabyProfile) => {
     const photoUri = babyPhotos[baby.baby_id];
     return (
@@ -445,7 +526,6 @@ export default function Children({ navigation, route }: Props) {
         <View style={styles.cardBody}>
           <View style={styles.nameRow}>
             <View style={styles.nameLeft}>
-              <Text style={styles.childName}>{baby.display_name}</Text>
               {baby.sex && (
                 <Ionicons
                   name={baby.sex === "male" ? "male-outline" : "female-outline"}
@@ -454,6 +534,7 @@ export default function Children({ navigation, route }: Props) {
                   style={styles.genderIcon}
                 />
               )}
+              <Text style={styles.childName}>{baby.display_name}</Text>
             </View>
 
             <View style={styles.agePill}>
@@ -657,14 +738,7 @@ export default function Children({ navigation, route }: Props) {
         </View>
       </View>
 
-      <Pressable
-        style={styles.contentWrap}
-        onPress={() => {
-          if (layoutMode === 4 && selectedGridBabyId !== null) {
-            setSelectedGridBabyId(null);
-          }
-        }}
-      >
+      <View style={styles.contentWrap}>
         <View style={styles.inner}>
           <View style={styles.searchRow}>
             <View style={styles.searchBox}>
@@ -762,6 +836,13 @@ export default function Children({ navigation, route }: Props) {
           )}
 
           {layoutMode === 4 && selectedGridBaby && (
+            <Pressable
+              style={styles.dismissOverlay}
+              onPress={() => setSelectedGridBabyId(null)}
+            />
+          )}
+
+          {layoutMode === 4 && selectedGridBaby && (
             <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + verticalScale(72) }]}>
               <View style={styles.bottomSheetHandle} />
 
@@ -849,7 +930,7 @@ export default function Children({ navigation, route }: Props) {
           )}
 
           <TouchableOpacity
-            style={styles.fab}
+            style={[styles.fab, { bottom: insets.bottom + verticalScale(90) }]}
             activeOpacity={0.9}
             onPress={openAddChildModal}
           >
@@ -858,7 +939,7 @@ export default function Children({ navigation, route }: Props) {
             </View>
           </TouchableOpacity>
         </View>
-      </Pressable>
+      </View>
 
       <ChildEditModal
         visible={childModalVisible}
@@ -879,7 +960,83 @@ export default function Children({ navigation, route }: Props) {
         }
         onNotesChange={(v) => setChildForm((prev) => ({ ...prev, notes: v }))}
         onSave={saveChild}
+        canDelete={childModalMode === "edit" && !!editingBaby}
+        isPrimaryCaregiver={isPrimaryCaregiverForEditing}
+        onDelete={openDeleteConfirm}
       />
+
+      <Modal
+        visible={deleteConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDeleteConfirm}
+      >
+        <View style={styles.deleteBackdrop}>
+          <View style={styles.deleteCard}>
+            <View style={styles.deleteIconCircle}>
+              <Ionicons name="warning-outline" size={28} color="#D9534F" />
+            </View>
+
+            <Text style={styles.deleteTitle}>
+              {isPrimaryCaregiverForEditing ? "Delete Child" : "Remove Access"}
+            </Text>
+
+            <Text style={styles.deleteBody}>
+              {isPrimaryCaregiverForEditing
+                ? `This will permanently delete ${editingBaby?.display_name ?? "this child"} and all related data (growth, vaccinations, invitations, and caregiver access). This cannot be undone.`
+                : `You will lose access to ${editingBaby?.display_name ?? "this child"}. The primary caregiver can re-invite you later.`}
+            </Text>
+
+            {isPrimaryCaregiverForEditing && (
+              <>
+                <Text style={styles.deleteTypePrompt}>
+                  Type <Text style={styles.deleteTypeName}>{editingBaby?.display_name}</Text> to confirm.
+                </Text>
+                <TextInput
+                  value={deleteConfirmName}
+                  onChangeText={setDeleteConfirmName}
+                  placeholder="Child's name"
+                  placeholderTextColor="#b2b8c3"
+                  style={styles.deleteInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!childDeleting}
+                />
+              </>
+            )}
+
+            {childFeedback?.type === "error" && (
+              <Text style={styles.deleteErrorText}>{childFeedback.message}</Text>
+            )}
+
+            <View style={styles.deleteActions}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={closeDeleteConfirm}
+                disabled={childDeleting}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.deleteCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.deleteConfirmBtn, childDeleting && { opacity: 0.6 }]}
+                onPress={confirmDeleteChild}
+                disabled={childDeleting}
+                activeOpacity={0.85}
+              >
+                {childDeleting ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.deleteConfirmText}>
+                    {isPrimaryCaregiverForEditing ? "Delete" : "Remove Access"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -898,6 +1055,9 @@ type ChildEditModalProps = {
   onBloodTypeChange: (v: string) => void;
   onNotesChange: (v: string) => void;
   onSave: () => void;
+  canDelete?: boolean;
+  isPrimaryCaregiver?: boolean;
+  onDelete?: () => void;
 };
 
 function ChildEditModal({
@@ -914,7 +1074,11 @@ function ChildEditModal({
   onBloodTypeChange,
   onNotesChange,
   onSave,
+  canDelete,
+  isPrimaryCaregiver,
+  onDelete,
 }: ChildEditModalProps) {
+  const insets = useSafeAreaInsets();
   const title = mode === "add" ? "Add Child" : "Edit Child";
   const subtitle =
     mode === "add"
@@ -1090,7 +1254,20 @@ function ChildEditModal({
             </View>
           </ScrollView>
 
-          <View style={styles.modalFooter}>
+          {canDelete && onDelete && (
+            <TouchableOpacity
+              onPress={onDelete}
+              activeOpacity={0.85}
+              style={styles.modalDeleteBtn}
+            >
+              <Ionicons name="trash-outline" size={moderateScale(18)} color="#D9534F" />
+              <Text style={styles.modalDeleteBtnText}>
+                {isPrimaryCaregiver ? "Delete Child" : "Remove My Access"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={[styles.modalFooter, { paddingBottom: Math.max(verticalScale(18), insets.bottom) }]}>
             <TouchableOpacity onPress={onClose} style={styles.modalCancelBtn} activeOpacity={0.85}>
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -1322,7 +1499,7 @@ const styles = StyleSheet.create({
   },
 
   genderIcon: {
-    marginLeft: 4,
+    marginRight: 6,
   },
 
   agePill: {
@@ -1589,6 +1766,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  dismissOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
   bottomSheet: {
     position: "absolute",
     left: scale(5),
@@ -1728,7 +1913,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: scale(20),
-    bottom: verticalScale(120),
     zIndex: 30,
   },
 
@@ -2013,6 +2197,137 @@ const styles = StyleSheet.create({
   },
 
   modalSaveBtnText: {
+    fontSize: moderateScale(14),
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  modalDeleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(8),
+    marginHorizontal: scale(14),
+    marginTop: verticalScale(2),
+    marginBottom: verticalScale(6),
+    paddingVertical: verticalScale(12),
+    borderRadius: moderateScale(14),
+    borderWidth: 1,
+    borderColor: "#F5C6C6",
+    backgroundColor: "#FFF0F0",
+  },
+
+  modalDeleteBtnText: {
+    fontSize: moderateScale(14),
+    fontWeight: "800",
+    color: "#D9534F",
+  },
+
+  deleteBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: scale(22),
+  },
+
+  deleteCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: moderateScale(20),
+    padding: scale(20),
+    alignItems: "stretch",
+  },
+
+  deleteIconCircle: {
+    alignSelf: "center",
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
+    backgroundColor: "#FFF0F0",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: verticalScale(10),
+  },
+
+  deleteTitle: {
+    fontSize: moderateScale(18),
+    fontWeight: "800",
+    color: "#2F3A48",
+    textAlign: "center",
+    marginBottom: verticalScale(8),
+  },
+
+  deleteBody: {
+    fontSize: moderateScale(13),
+    color: "#5B6775",
+    lineHeight: moderateScale(19),
+    textAlign: "center",
+    marginBottom: verticalScale(14),
+  },
+
+  deleteTypePrompt: {
+    fontSize: moderateScale(12),
+    color: "#5B6775",
+    textAlign: "center",
+    marginBottom: verticalScale(6),
+  },
+
+  deleteTypeName: {
+    fontWeight: "800",
+    color: "#2F3A48",
+  },
+
+  deleteInput: {
+    borderWidth: 1,
+    borderColor: "#D0D7E0",
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(10),
+    fontSize: moderateScale(14),
+    color: "#2F3A48",
+    backgroundColor: "#F8FAFC",
+    marginBottom: verticalScale(10),
+  },
+
+  deleteErrorText: {
+    fontSize: moderateScale(12),
+    color: "#D9534F",
+    textAlign: "center",
+    marginBottom: verticalScale(6),
+  },
+
+  deleteActions: {
+    flexDirection: "row",
+    gap: scale(10),
+    marginTop: verticalScale(6),
+  },
+
+  deleteCancelBtn: {
+    flex: 1,
+    minHeight: verticalScale(46),
+    borderRadius: moderateScale(14),
+    backgroundColor: "#E6EBF0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  deleteCancelText: {
+    fontSize: moderateScale(14),
+    fontWeight: "800",
+    color: "#66717C",
+  },
+
+  deleteConfirmBtn: {
+    flex: 1,
+    minHeight: verticalScale(46),
+    borderRadius: moderateScale(14),
+    backgroundColor: "#D9534F",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  deleteConfirmText: {
     fontSize: moderateScale(14),
     fontWeight: "900",
     color: "#FFFFFF",

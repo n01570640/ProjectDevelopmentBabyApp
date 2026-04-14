@@ -5,7 +5,18 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 import { store } from "./src/store";
+import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+
+// Android: create notification channel with MAX importance for heads-up popups
+if (Platform.OS === "android") {
+  Notifications.setNotificationChannelAsync("default", {
+    name: "Default",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    sound: "default",
+  });
+}
 
 // Show notifications even when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -30,6 +41,7 @@ import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
 import CustomTabBar from "./src/components/navBar";
 import ProfileHomeScreen from "./src/components/ProfileHomeScreen";
 import HomeScreen from "./src/components/HomeScreen";
+import Children from "./src/components/children";
 
 
 const Stack = createNativeStackNavigator();
@@ -48,10 +60,19 @@ const screenOptions = { headerShown: false };
 
 // ── Tab stacks (screens within each tab) ────────────────────────
 
-function ChildrenStack() {
+function HomeStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function BabiesStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="BabiesList" component={Children} />
       <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
       <Stack.Screen name="AddChild" component={AddChildScreen} />
     </Stack.Navigator>
@@ -95,7 +116,8 @@ function MainTabs() {
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={screenOptions}
     >
-      <Tab.Screen name="ChildrenTab" component={ChildrenStack} />
+      <Tab.Screen name="HomeTab" component={HomeStack} />
+      <Tab.Screen name="BabiesTab" component={BabiesStack} />
       <Tab.Screen name="ScheduleTab" component={ScheduleStack} />
       <Tab.Screen name="StatisticsTab" component={StatisticsStack} />
       <Tab.Screen name="ProfileTab" component={ProfileStack} />

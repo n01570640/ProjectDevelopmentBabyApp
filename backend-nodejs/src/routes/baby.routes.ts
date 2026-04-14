@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import * as babyController from "../controllers/baby.controller";
 import * as babyProfilePhotoController from "../controllers/baby-profile-photo.controller";
+import * as timelineController from "../controllers/timeline.controller";
 import { verifyTokenMiddleware } from "../middleware/auth.middleware";
 import { requireBabyAccess, requirePrimaryCaregiver } from "../middleware/rbac.middleware";
 import { validate } from "../middleware/validation.middleware";
@@ -73,6 +74,15 @@ router.post(
   requireBabyAccess,
   upload.single("photo"),
   babyProfilePhotoController.uploadBabyProfilePhoto
+);
+
+// GET /api/v1/babies/:babyId/timeline — unified chronological event feed
+router.get(
+  "/:babyId/timeline",
+  babyIdValidator,
+  validate,
+  requireBabyAccess,
+  timelineController.getBabyTimeline
 );
 
 export default router;

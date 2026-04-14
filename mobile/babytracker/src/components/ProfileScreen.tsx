@@ -19,11 +19,15 @@ if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { Baby } from "../types/baby.types";
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { fetchBabies } from '../store/slices/babiesSlice';
 import { createInvitation, getInvitations, cancelInvitation } from "../../services/invitationService";
+import { getBabyProfilePhoto } from "../../services/babyProfilePhotoService";
+import { useFocusEffect } from "@react-navigation/native";
 import { getCaregivers, removeCaregiver } from "../../services/caregiverService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
@@ -440,6 +444,23 @@ export default function ProfileScreen({ navigation }: any) {
     dispatch(fetchBabies());
   }, [dispatch]);
 
+  const loadBabyPhotos = useCallback(() => {
+    if (!babies || babies.length === 0) return;
+    babies.forEach(async (baby: Baby) => {
+      try {
+        const result = await getBabyProfilePhoto(baby.id);
+        if (result?.success && result.data?.sas_url) {
+          setBabyImages((prev) => ({ ...prev, [baby.id]: result.data.sas_url }));
+        }
+      } catch {
+        // ignore — leave placeholder
+      }
+    });
+  }, [babies]);
+
+  useEffect(() => { loadBabyPhotos(); }, [loadBabyPhotos]);
+  useFocusEffect(useCallback(() => { loadBabyPhotos(); }, [loadBabyPhotos]));
+
   const handleViewHistory = (baby: Baby) => {
     setSelectedBaby(baby);
     navigation.navigate("History", { baby });
@@ -513,19 +534,32 @@ export default function ProfileScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}>
-        {/* Title row with Add button */}
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>My Babies</Text>
+      <LinearGradient
+        colors={[colors.primary, colors.accent]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.headerGradient, { paddingTop: insets.top + verticalScale(12) }]}
+      >
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>My Babies</Text>
+            <Text style={styles.headerSubtitle}>Manage profiles and caregivers</Text>
+          </View>
           <TouchableOpacity
             style={styles.addBabyBtn}
             onPress={() => navigation.navigate("AddChild")}
             activeOpacity={0.85}
           >
             <Ionicons name="add" size={20} color="#fff" />
-            <Text style={styles.addBabyBtnText}>Add Baby</Text>
+            <Text style={styles.addBabyBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
+      </LinearGradient>
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
 
         {/* Loading */}
         {loading && (
@@ -611,12 +645,14 @@ export default function ProfileScreen({ navigation }: any) {
                 <Text style={styles.actionButtonText}>History</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => handleCaregiversPress(baby)}
-              >
-                <Text style={styles.actionButtonText}>Caregivers</Text>
-              </TouchableOpacity>
+              {baby.role === "PRIMARY" && (
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleCaregiversPress(baby)}
+                >
+                  <Text style={styles.actionButtonText}>Caregivers</Text>
+                </TouchableOpacity>
+              )}
 
               {baby.canShare && (
                 <TouchableOpacity
@@ -660,15 +696,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  headerGradient: {
+    paddingHorizontal: scale(16),
+    paddingBottom: verticalScale(16),
+    borderBottomLeftRadius: moderateScale(34),
+    borderBottomRightRadius: moderateScale(34),
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(12),
+  },
+  backBtn: {
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: moderateScale(20),
+    fontWeight: "700",
+    color: "#fff",
+  },
+  headerSubtitle: {
+    fontSize: moderateScale(12),
+    color: "rgba(255,255,255,0.85)",
+    marginTop: 2,
+  },
   scrollContent: {
     padding: 20,
     paddingBottom: 100,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
   },
   title: {
     fontSize: 24,
