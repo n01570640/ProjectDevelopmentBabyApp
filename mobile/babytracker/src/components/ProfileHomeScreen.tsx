@@ -243,8 +243,12 @@ export default function ProfileHomeScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
+      <View
+        style={[styles.statusBarBackdrop, { height: insets.top }]}
+        pointerEvents="none"
+      />
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 110 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.heroCard, { paddingTop: insets.top + 18 }]}>
@@ -551,6 +555,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#EDF3F7",
+  },
+
+  statusBarBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#8DBCF1",
+    zIndex: 10,
   },
 
   heroCard: {

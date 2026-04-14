@@ -18,7 +18,8 @@ type TabConfig = {
 };
 
 const TABS: TabConfig[] = [
-  { routeName: "ChildrenTab", icon: "home-outline", label: "Home" },
+  { routeName: "HomeTab", icon: "home-outline", label: "Home" },
+  { routeName: "BabiesTab", icon: "people-outline", label: "Babies" },
   { routeName: "ScheduleTab", icon: "calendar-outline", label: "Schedule" },
   { routeName: "StatisticsTab", icon: "stats-chart-outline", label: "Statistics" },
   { routeName: "ProfileTab", icon: "person-circle-outline", label: "Profile" },
