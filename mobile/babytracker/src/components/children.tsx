@@ -610,12 +610,19 @@ export default function Children({ navigation, route }: Props) {
     );
   };
 
-  const renderTwoUpCard = (baby: BabyProfile) => {
+  const renderTwoUpCard = (baby: BabyProfile, index: number) => {
     const cardWidth = getCardWidth();
     const photoUri = babyPhotos[baby.baby_id];
+    const isEndOfRow = index % 2 === 1;
 
     return (
-      <View key={baby.baby_id} style={[styles.twoUpCard, { width: cardWidth as number }]}>
+      <View
+        key={baby.baby_id}
+        style={[
+          styles.twoUpCard,
+          { width: cardWidth as number, marginRight: isEndOfRow ? 0 : scale(12) },
+        ]}
+      >
         <View style={styles.cardTopAccent} />
 
         <Image
@@ -678,10 +685,11 @@ export default function Children({ navigation, route }: Props) {
     );
   };
 
-  const renderCompactCard = (baby: BabyProfile) => {
+  const renderCompactCard = (baby: BabyProfile, index: number) => {
     const cardWidth = getCardWidth();
     const isSelected = selectedGridBabyId === baby.baby_id;
     const photoUri = babyPhotos[baby.baby_id];
+    const isEndOfRow = index % 4 === 3;
 
     return (
       <TouchableOpacity
@@ -689,7 +697,7 @@ export default function Children({ navigation, route }: Props) {
         activeOpacity={0.9}
         style={[
           styles.compactCard,
-          { width: cardWidth as number },
+          { width: cardWidth as number, marginRight: isEndOfRow ? 0 : scale(12) },
           isSelected && styles.compactCardSelected,
         ]}
         onPress={() =>
@@ -821,13 +829,13 @@ export default function Children({ navigation, route }: Props) {
 
               {layoutMode === 2 && (
                 <View style={styles.gridWrap}>
-                  {filteredBabies.map((baby: BabyProfile) => renderTwoUpCard(baby))}
+                  {filteredBabies.map((baby: BabyProfile, index: number) => renderTwoUpCard(baby, index))}
                 </View>
               )}
 
               {layoutMode === 4 && (
                 <View style={styles.gridWrap}>
-                  {filteredBabies.map((baby: BabyProfile) => renderCompactCard(baby))}
+                  {filteredBabies.map((baby: BabyProfile, index: number) => renderCompactCard(baby, index))}
                 </View>
               )}
 
@@ -1447,7 +1455,7 @@ const styles = StyleSheet.create({
   gridWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     alignItems: "flex-start",
   },
 

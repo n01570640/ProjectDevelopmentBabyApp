@@ -11,6 +11,10 @@ import {
   Dimensions,
   Platform,
   Alert,
+  LayoutAnimation,
+  UIManager,
+  Animated,
+  Easing,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Calendar } from "react-native-calendars";
@@ -32,6 +36,10 @@ import { colors } from "../theme/colors";
 
 const { width, height } = Dimensions.get("window");
 
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 type EventType = "activity" | "task" | "reminder";
 type TabMode = "schedule" | "calendar";
 
@@ -51,6 +59,13 @@ interface MarkedDate {
 }
 
 type Props = { navigation: any };
+
+type OverrideMap = Record<
+  string,
+  Partial<ScheduleEvent> & {
+    raw?: any;
+  }
+>;
 
 const COLORS = {
   activity: {
@@ -72,6 +87,42 @@ const COLORS = {
     icon: "alarm-outline",
   },
 } as const;
+
+const CALENDAR_SECTION_META = {
+  activity: {
+    title: "Activities",
+    icon: "flash-outline",
+    header: "#86B5E7",
+    border: "#6CA9EA",
+    completedBg: "#8DBCF1",
+  },
+  task: {
+    title: "Tasks",
+    icon: "checkmark-circle-outline",
+    header: "#F2B652",
+    border: "#F0AD42",
+    completedBg: "#F6C86C",
+  },
+  reminder: {
+    title: "Reminders",
+    icon: "alarm-outline",
+    header: "#7BCB96",
+    border: "#63B980",
+    completedBg: "#8FD5A7",
+  },
+} as const;
+
+const hexToRgba = (hex: string, alpha: number) => {
+  const cleaned = hex.replace('#', '');
+  const normalized = cleaned.length === 3
+    ? cleaned.split('').map((c) => c + c).join('')
+    : cleaned;
+  const bigint = parseInt(normalized, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -122,6 +173,18 @@ const formatMonthYear = (date: string) =>
 const formatWeekdayDay = (date: string) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
+    day: "numeric",
+  });
+
+const shiftDateString = (date: string, deltaDays: number) => {
+  const base = new Date(`${date}T12:00:00`);
+  base.setDate(base.getDate() + deltaDays);
+  return `${base.getFullYear()}-${pad2(base.getMonth() + 1)}-${pad2(base.getDate())}`;
+};
+
+const formatShortDate = (date: string) =>
+  new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+    month: "short",
     day: "numeric",
   });
 
@@ -180,6 +243,23 @@ const isEventCompleted = (
   return false;
 };
 
+const animateSelection = () => {
+  LayoutAnimation.configureNext({
+    duration: 280,
+    create: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+    update: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+    },
+    delete: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+  });
+};
+
 export default function ScheduleScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
@@ -191,6 +271,7 @@ export default function ScheduleScreen({ navigation }: Props) {
   const hasInitializedTodaySelection = useRef(false);
 
   const [selectedDate, setSelectedDate] = useState(today);
+  const [displayDate, setDisplayDate] = useState(today);
   const [mode, setMode] = useState<TabMode>("schedule");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedBaby, setSelectedBaby] = useState<any>(null);
@@ -207,6 +288,15 @@ export default function ScheduleScreen({ navigation }: Props) {
   const [hiddenEventKeys, setHiddenEventKeys] = useState<string[]>([]);
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [completedEventKeys, setCompletedEventKeys] = useState<string[]>([]);
+  const [calendarExpandedKeys, setCalendarExpandedKeys] = useState<string[]>([]);
+
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
+  const [eventOverrides, setEventOverrides] = useState<OverrideMap>({});
+
+  const dateHeaderOpacity = useRef(new Animated.Value(1)).current;
+  const dateHeaderTranslateX = useRef(new Animated.Value(0)).current;
+  const dateHeaderTranslateY = useRef(new Animated.Value(0)).current;
 
   const [form, setForm] = useState({
     title: "",
@@ -217,6 +307,19 @@ export default function ScheduleScreen({ navigation }: Props) {
     dueAt: new Date(),
     status: "pending",
   });
+
+  const contentOpacityAnim = useRef(new Animated.Value(1)).current;
+  const [contentTransitioning, setContentTransitioning] = useState(false);
+  const transitionTokenRef = useRef(0);
+  const didMountContentTransitionRef = useRef(false);
+
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => setFeedback(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
+
 
   const { items: babies } = useAppSelector((state) => state.babies);
   const { items: activities } = useAppSelector((state) => state.activities);
@@ -249,6 +352,18 @@ export default function ScheduleScreen({ navigation }: Props) {
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  useEffect(() => {
+    if (!selectedBaby) return;
+
+    if (!didMountContentTransitionRef.current) {
+      didMountContentTransitionRef.current = true;
+      return;
+    }
+
+    runSceneRefreshTransition();
+  }, [selectedDate, selectedBaby?.baby_id, runSceneRefreshTransition]);
+
 
   const events = useMemo(() => {
     const mapped: ScheduleEvent[] = [];
@@ -299,9 +414,23 @@ export default function ScheduleScreen({ navigation }: Props) {
     });
 
     return mapped
+      .map((ev) => {
+        const key = toEventKey(ev);
+        const override = eventOverrides[key];
+        return override
+          ? {
+              ...ev,
+              ...override,
+              raw: {
+                ...ev.raw,
+                ...(override.raw ?? {}),
+              },
+            }
+          : ev;
+      })
       .filter((ev) => !hiddenEventKeys.includes(toEventKey(ev)))
       .sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
-  }, [activities, tasks, reminders, hiddenEventKeys]);
+  }, [activities, tasks, reminders, hiddenEventKeys, eventOverrides]);
 
   const markedDates = useMemo(() => {
     const result: Record<string, MarkedDate> = {};
@@ -320,6 +449,17 @@ export default function ScheduleScreen({ navigation }: Props) {
       .sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
   }, [events, selectedDate]);
 
+  const calendarSections = useMemo(
+    () =>
+      (["activity", "task", "reminder"] as EventType[])
+        .map((type) => ({
+          type,
+          events: dayEvents.filter((ev) => ev.type === type),
+        }))
+        .filter((section) => section.events.length > 0),
+    [dayEvents]
+  );
+
   const selectedEvent = useMemo(() => {
     if (!selectedEventId) return null;
     return dayEvents.find((ev) => toEventKey(ev) === selectedEventId) ?? null;
@@ -327,9 +467,11 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   const nextUpcomingEventKey = useMemo(() => {
     const now = Date.now();
-    const nextUpcoming = dayEvents.find((ev) => getEventTimestamp(ev) >= now);
+    const nextUpcoming = dayEvents.find(
+      (ev) => getEventTimestamp(ev) >= now && !isEventCompleted(ev, completedEventKeys)
+    );
     return nextUpcoming ? toEventKey(nextUpcoming) : null;
-  }, [dayEvents]);
+  }, [dayEvents, completedEventKeys]);
 
   const selectedEventTimingLabel = useMemo(() => {
     if (!selectedEvent) return "Future Event";
@@ -355,6 +497,10 @@ export default function ScheduleScreen({ navigation }: Props) {
   }, [dayEvents, selectedEventId]);
 
   useEffect(() => {
+    setCalendarExpandedKeys([]);
+  }, [selectedDate, selectedBaby?.baby_id]);
+
+  useEffect(() => {
     if (mode !== "schedule") return;
     if (selectedDate !== today) return;
     if (!dayEvents.length) return;
@@ -362,7 +508,11 @@ export default function ScheduleScreen({ navigation }: Props) {
 
     const now = Date.now();
     const nextUpcoming =
-      dayEvents.find((ev) => getEventTimestamp(ev) >= now) ?? dayEvents[0];
+      dayEvents.find(
+        (ev) => getEventTimestamp(ev) >= now && !isEventCompleted(ev, completedEventKeys)
+      ) ??
+      dayEvents.find((ev) => !isEventCompleted(ev, completedEventKeys)) ??
+      dayEvents[0];
 
     if (nextUpcoming) {
       const key = toEventKey(nextUpcoming);
@@ -380,7 +530,7 @@ export default function ScheduleScreen({ navigation }: Props) {
         }
       }, 120);
     }
-  }, [mode, today, selectedDate, dayEvents, timelineViewportHeight]);
+  }, [mode, today, selectedDate, dayEvents, timelineViewportHeight, completedEventKeys]);
 
   const mergeDatePart = (existing: Date, picked: Date) => {
     const r = new Date(existing);
@@ -434,6 +584,28 @@ export default function ScheduleScreen({ navigation }: Props) {
       status: "pending",
     });
     setModalVisible(true);
+  };
+
+  const openEditModal = (ev: ScheduleEvent) => {
+    setEditingEvent(ev);
+    setModalType(ev.type);
+    setModalBaby(selectedBaby ?? babies[0] ?? null);
+
+    const startIso = ev.type === "activity" ? ev.raw?.start_time : ev.raw?.due_at;
+    const endIso = ev.type === "activity" ? ev.raw?.end_time : null;
+    const baseDate = parseDateSafe(startIso) ?? new Date(`${selectedDate}T09:00:00`);
+
+    setForm({
+      title: ev.type === "activity" ? "" : ev.title ?? "",
+      description: ev.type === "activity" ? ev.raw?.notes ?? "" : ev.description ?? "",
+      activityType: ev.type === "activity" ? ev.raw?.activity_type ?? "feeding" : "feeding",
+      startTime: baseDate,
+      endTime: endIso ? parseDateSafe(endIso) : null,
+      dueAt: baseDate,
+      status: ev.type === "task" ? ev.raw?.status ?? "pending" : "pending",
+    });
+
+    setEditModalVisible(true);
   };
 
   const handleSave = async () => {
@@ -496,6 +668,118 @@ export default function ScheduleScreen({ navigation }: Props) {
     }
   };
 
+  const handleSaveEdit = async () => {
+    if (!editingEvent) return;
+
+    setSaving(true);
+    try {
+      const key = toEventKey(editingEvent);
+
+      if (editingEvent.type === "activity") {
+        const startIso = form.startTime.toISOString();
+        const endIso = form.endTime ? form.endTime.toISOString() : null;
+
+        setEventOverrides((prev) => ({
+          ...prev,
+          [key]: {
+            title: activityLabel(form.activityType),
+            description: form.description || undefined,
+            date: toDateStr(startIso),
+            time: toTimeStr(startIso),
+            raw: {
+              ...editingEvent.raw,
+              activity_type: form.activityType,
+              start_time: startIso,
+              end_time: endIso,
+              notes: form.description || null,
+            },
+          },
+        }));
+      } else if (editingEvent.type === "task") {
+        const dueIso = form.dueAt.toISOString();
+
+        setEventOverrides((prev) => ({
+          ...prev,
+          [key]: {
+            title: form.title,
+            description: form.description || undefined,
+            date: toDateStr(dueIso),
+            time: toTimeStr(dueIso),
+            raw: {
+              ...editingEvent.raw,
+              title: form.title,
+              description: form.description || null,
+              due_at: dueIso,
+              status: form.status,
+            },
+          },
+        }));
+      } else {
+        const dueIso = form.dueAt.toISOString();
+
+        setEventOverrides((prev) => ({
+          ...prev,
+          [key]: {
+            title: form.title,
+            description: form.description || undefined,
+            date: toDateStr(dueIso),
+            time: toTimeStr(dueIso),
+            raw: {
+              ...editingEvent.raw,
+              title: form.title,
+              body: form.description || null,
+              due_at: dueIso,
+            },
+          },
+        }));
+      }
+
+      animateSelection();
+      setEditModalVisible(false);
+      setFeedback({ type: "success", message: "Event updated in the current schedule view." });
+    } catch (e: any) {
+      setFeedback({ type: "error", message: e?.message ?? "Failed to update event." });
+    } finally {
+      setSaving(false);
+      setEditingEvent(null);
+    }
+  };
+
+
+  const runSceneRefreshTransition = useCallback(
+    async (work?: () => Promise<void> | void) => {
+      const myToken = Date.now();
+      transitionTokenRef.current = myToken;
+
+      Animated.timing(contentOpacityAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(async () => {
+        if (transitionTokenRef.current !== myToken) return;
+        setContentTransitioning(true);
+
+        if (work) {
+          await Promise.resolve(work());
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 180));
+        }
+
+        if (transitionTokenRef.current !== myToken) return;
+        setContentTransitioning(false);
+
+        Animated.timing(contentOpacityAnim, {
+          toValue: 1,
+          duration: 500,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }).start();
+      });
+    },
+    [contentOpacityAnim]
+  );
+
   const handleDeleteEvent = (ev: ScheduleEvent) => {
     const key = toEventKey(ev);
 
@@ -508,6 +792,7 @@ export default function ScheduleScreen({ navigation }: Props) {
           text: "Delete",
           style: "destructive",
           onPress: () => {
+            animateSelection();
             setHiddenEventKeys((prev) => [...prev, key]);
             if (selectedEventId === key) setSelectedEventId(null);
             setFeedback({ type: "success", message: "Event removed from the schedule view." });
@@ -534,10 +819,218 @@ export default function ScheduleScreen({ navigation }: Props) {
   };
 
   const toggleDeleteMode = () => {
+    LayoutAnimation.configureNext({
+      duration: 1000,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
     setDeleteMode((prev) => !prev);
   };
 
+  const handleSelectEvent = (key: string) => {
+    animateSelection();
+    setSelectedEventId((prev) => (prev === key ? null : key));
+  };
+
+  const animateDateHeaderChange = (
+    nextDate: string,
+    direction: "left" | "right" | "up" | "down"
+  ) => {
+    if (nextDate === selectedDate) return;
+
+    animateSelection();
+    hasInitializedTodaySelection.current = false;
+    setSelectedEventId(null);
+
+    const outX = direction === "right" ? 18 : direction === "left" ? -18 : 0;
+    const outY = direction === "down" ? 18 : direction === "up" ? -18 : 0;
+    const inX = direction === "right" ? -18 : direction === "left" ? 18 : 0;
+    const inY = direction === "down" ? -18 : direction === "up" ? 18 : 0;
+
+    Animated.parallel([
+      Animated.timing(dateHeaderOpacity, {
+        toValue: 0,
+        duration: 140,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(dateHeaderTranslateX, {
+        toValue: outX,
+        duration: 140,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(dateHeaderTranslateY, {
+        toValue: outY,
+        duration: 140,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setDisplayDate(nextDate);
+      setSelectedDate(nextDate);
+
+      dateHeaderTranslateX.setValue(inX);
+      dateHeaderTranslateY.setValue(inY);
+
+      Animated.parallel([
+        Animated.timing(dateHeaderOpacity, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(dateHeaderTranslateX, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(dateHeaderTranslateY, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  const changeSelectedDate = (deltaDays: number) => {
+    const nextDate = shiftDateString(selectedDate, deltaDays);
+    animateDateHeaderChange(nextDate, deltaDays > 0 ? "right" : "left");
+  };
+
+  const handleCalendarDateChange = (nextDate: string) => {
+    if (nextDate === selectedDate) return;
+    const direction = new Date(`${nextDate}T12:00:00`).getTime() >= new Date(`${selectedDate}T12:00:00`).getTime()
+      ? "down"
+      : "up";
+    animateDateHeaderChange(nextDate, direction);
+  };
+
+  const toggleCalendarExpanded = (key: string) => {
+    LayoutAnimation.configureNext({
+      duration: 260,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+    setCalendarExpandedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
   const selectedIsCompleted = isEventCompleted(selectedEvent, completedEventKeys);
+  const modeAnim = useRef(new Animated.Value(mode === "schedule" ? 0 : 1)).current;
+  const editModeAnim = useRef(new Animated.Value(deleteMode ? 1 : 0)).current;
+  const [showEditIcons, setShowEditIcons] = useState(deleteMode);
+
+  useEffect(() => {
+    if (deleteMode) {
+      setShowEditIcons(true);
+    }
+
+    Animated.timing(editModeAnim, {
+      toValue: deleteMode ? 1 : 0,
+      duration: 1000,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      if (!deleteMode) {
+        setShowEditIcons(false);
+      }
+    });
+  }, [deleteMode, editModeAnim]);
+
+  useEffect(() => {
+    Animated.timing(modeAnim, {
+      toValue: mode === "schedule" ? 0 : 1,
+      duration: 420,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [mode, modeAnim]);
+
+  const scheduleScreenAnimatedStyle = {
+    opacity: modeAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 0],
+    }),
+    transform: [
+      {
+        translateX: modeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, -24],
+        }),
+      },
+    ],
+  };
+
+  const calendarScreenAnimatedStyle = {
+    opacity: modeAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 1],
+    }),
+    transform: [
+      {
+        translateX: modeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [24, 0],
+        }),
+      },
+    ],
+  };
+
+  const segmentIndicatorStyle = {
+    transform: [
+      {
+        translateX: modeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, width * 0.46],
+        }),
+      },
+    ],
+  };
+
+  const scheduleTabContentStyle = {
+    transform: [
+      {
+        translateY: modeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [verticalScale(-2), verticalScale(2)],
+        }),
+      },
+    ],
+  };
+
+  const calendarTabContentStyle = {
+    transform: [
+      {
+        translateY: modeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [verticalScale(2), verticalScale(-2)],
+        }),
+      },
+    ],
+  };
 
   return (
     <View style={styles.container}>
@@ -548,62 +1041,104 @@ export default function ScheduleScreen({ navigation }: Props) {
         style={[styles.topShell, { paddingTop: insets.top + verticalScale(8) }]}
       >
         <View style={styles.segmentedControl}>
+          <Animated.View style={[styles.segmentIndicator, segmentIndicatorStyle]} />
+
           <TouchableOpacity
             onPress={() => setMode("schedule")}
-            style={[styles.segmentHalf, mode === "schedule" && styles.segmentHalfActive]}
+            style={styles.segmentHalf}
+            activeOpacity={0.9}
           >
-            <Text style={[styles.segmentLabel, mode === "schedule" && styles.segmentLabelActive]}>
-              Daily Schedule
-            </Text>
-            <Ionicons
-              name="list"
-              size={moderateScale(18)}
-              color={mode === "schedule" ? "#666" : "#B4B4B4"}
-            />
+            <Animated.View style={[styles.segmentTabContent, scheduleTabContentStyle]}>
+              <Text style={[styles.segmentLabel, mode === "schedule" && styles.segmentLabelActive]}>
+                Daily Schedule
+              </Text>
+              <Ionicons
+                name="list"
+                size={moderateScale(18)}
+                color={mode === "schedule" ? "#4F8DD4" : "#B4B4B4"}
+              />
+            </Animated.View>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setMode("calendar")}
-            style={[styles.segmentHalf, mode === "calendar" && styles.segmentHalfActive]}
+            style={styles.segmentHalf}
+            activeOpacity={0.9}
           >
-            <Text style={[styles.segmentLabel, mode === "calendar" && styles.segmentLabelActive]}>
-              Calendar
-            </Text>
-            <Ionicons
-              name="calendar-outline"
-              size={moderateScale(18)}
-              color={mode === "calendar" ? "#666" : "#B4B4B4"}
-            />
+            <Animated.View style={[styles.segmentTabContent, calendarTabContentStyle]}>
+              <Text style={[styles.segmentLabel, mode === "calendar" && styles.segmentLabelActive]}>
+                Calendar
+              </Text>
+              <Ionicons
+                name="calendar-outline"
+                size={moderateScale(18)}
+                color={mode === "calendar" ? "#4F8DD4" : "#B4B4B4"}
+              />
+            </Animated.View>
           </TouchableOpacity>
         </View>
 
         <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerMonth}>{formatMonthYear(selectedDate)}</Text>
-            <Text style={styles.headerSub}>{formatWeekdayDay(selectedDate)}</Text>
+          <View style={styles.headerDateControlWrap}>
+            <TouchableOpacity
+              style={styles.headerDateChevronButton}
+              onPress={() => changeSelectedDate(-1)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chevron-back" size={moderateScale(18)} color="#EAF3FF" />
+            </TouchableOpacity>
+
+            <Animated.View
+              style={[
+                styles.headerDateTextWrap,
+                {
+                  opacity: dateHeaderOpacity,
+                  transform: [
+                    { translateX: dateHeaderTranslateX },
+                    { translateY: dateHeaderTranslateY },
+                  ],
+                },
+              ]}
+            >
+              <Text style={styles.headerMonth}>{formatMonthYear(displayDate)}</Text>
+              <Text style={styles.headerSub}>{formatWeekdayDay(displayDate)}</Text>
+            </Animated.View>
+
+            <TouchableOpacity
+              style={styles.headerDateChevronButton}
+              onPress={() => changeSelectedDate(1)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chevron-forward" size={moderateScale(18)} color="#EAF3FF" />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[styles.editButton, deleteMode && styles.editButtonActive]}
-            onPress={toggleDeleteMode}
-          >
-            <Text style={[styles.editButtonText, deleteMode && styles.editButtonTextActive]}>
-              {deleteMode ? "Done Deleting" : mode === "schedule" ? "Edit Schedule" : "Edit Calendar"}
-            </Text>
-            <Ionicons
-              name={deleteMode ? "trash-outline" : "settings"}
-              size={moderateScale(18)}
-              color={deleteMode ? "#D9534F" : "#666"}
-            />
-          </TouchableOpacity>
+          <View style={styles.headerActionsCol}>
+            <TouchableOpacity
+              style={[styles.editButton, deleteMode && styles.editButtonActive]}
+              onPress={toggleDeleteMode}
+            >
+              <Text style={[styles.editButtonText, deleteMode && styles.editButtonTextActive]}>
+                {deleteMode ? "Done Editing" : mode === "schedule" ? "Edit Schedule" : "Edit Calendar"}
+              </Text>
+              <Ionicons
+                name={deleteMode ? "create-outline" : "settings"}
+                size={moderateScale(18)}
+                color={deleteMode ? "#4F8DD4" : "#666"}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {babies.length > 1 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.babyPicker}>
+          <HorizontalChevronScroll contentContainerStyle={styles.babyPicker}>
             {babies.map((b) => (
               <TouchableOpacity
                 key={b.baby_id}
-                onPress={() => setSelectedBaby(b)}
+                onPress={() => {
+                  if (selectedBaby?.baby_id === b.baby_id) return;
+                  setSelectedBaby(b);
+                }}
                 style={[styles.babyChip, selectedBaby?.baby_id === b.baby_id && styles.babyChipActive]}
               >
                 <Text
@@ -616,11 +1151,11 @@ export default function ScheduleScreen({ navigation }: Props) {
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </HorizontalChevronScroll>
         )}
       </LinearGradient>
 
-      {feedback && !modalVisible && (
+      {feedback && !modalVisible && !editModalVisible && (
         <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
           <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
             {feedback.message}
@@ -628,17 +1163,15 @@ export default function ScheduleScreen({ navigation }: Props) {
         </View>
       )}
 
-      {mode === "calendar" ? (
+      <View style={styles.modeContent}>
+      <Animated.View style={[styles.sceneContentFadeLayer, { opacity: contentOpacityAnim }]}>
+      <Animated.View style={[styles.modeScene, styles.calendarScene, calendarScreenAnimatedStyle]} pointerEvents={mode === "calendar" ? "auto" : "none"}>
         <ScrollView contentContainerStyle={styles.calendarScreen} showsVerticalScrollIndicator={false}>
-          <View style={styles.sectionTitlePill}>
-            <Text style={styles.sectionTitleText}>{formatMonthYear(selectedDate)}</Text>
-          </View>
-
           <View style={styles.calendarCard}>
             <Calendar
               style={styles.calendar}
               current={selectedDate}
-              onDayPress={(d: any) => setSelectedDate(d.dateString)}
+              onDayPress={(d: any) => handleCalendarDateChange(d.dateString)}
               markingType="multi-dot"
               markedDates={{
                 ...markedDates,
@@ -659,96 +1192,27 @@ export default function ScheduleScreen({ navigation }: Props) {
             />
           </View>
 
-          <View style={styles.calendarInfoRow}>
-            <View style={styles.smallInfoPill}>
-              <Text style={styles.smallInfoPillText}>Today</Text>
-            </View>
-            <View style={[styles.smallInfoPill, styles.smallInfoPillRight]}>
-              <Text style={styles.smallInfoPillTextBlue}>{formatWeekdayDay(selectedDate)}</Text>
-            </View>
-          </View>
-
           {loading ? (
             <ActivityIndicator size="large" color={colors.primaryDark} style={{ marginTop: verticalScale(32) }} />
-          ) : selectedEvent ? (
-            <View style={styles.upcomingCard}>
-              <Text style={styles.upcomingHeadline}>
-                Upcoming event: <Text style={styles.upcomingHeadlineLight}>{getDisplayTitle(selectedEvent)}</Text>
-              </Text>
-
-              <View style={styles.upcomingMetaTypeRow}>
-                <View style={styles.upcomingTypeWrap}>
-                  <View
-                    style={[
-                      styles.typeDotSmall,
-                      { backgroundColor: COLORS[selectedEvent.type].dot },
-                    ]}
-                  />
-                  <Text style={styles.upcomingTypeText}>{getTypeLabel(selectedEvent.type)}</Text>
-                </View>
-              </View>
-
-              <View style={styles.upcomingRowTop}>
-                <View style={styles.timeBadge}>
-                  <Text style={styles.timeBadgeText}>{selectedEvent.time || "--:--"}</Text>
-                </View>
-                <View style={styles.peopleWrap}>
-                  <Ionicons name="people" size={moderateScale(22)} color="#2F2F2F" />
-                  <Text style={styles.peopleCount}>1</Text>
-                </View>
-              </View>
-
-              <View style={styles.upcomingBodyRow}>
-                <View style={styles.instructionsWrap}>
-                  <Text style={styles.instructionsTitle}>Instructions:</Text>
-                  <Text style={styles.instructionsText}>
-                    {selectedEvent.description || "No instructions provided."}
-                  </Text>
-
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.completeButton,
-                        isEventCompleted(selectedEvent, completedEventKeys) && styles.completeButtonDone,
-                      ]}
-                      onPress={() => handleToggleComplete(selectedEvent)}
-                    >
-                      <Text
-                        style={[
-                          styles.completeButtonText,
-                          isEventCompleted(selectedEvent, completedEventKeys) && styles.completeButtonTextDone,
-                        ]}
-                      >
-                        {isEventCompleted(selectedEvent, completedEventKeys) ? "Completed" : "Complete Task"}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <View
-                      style={[
-                        styles.clockCircle,
-                        isEventCompleted(selectedEvent, completedEventKeys) && styles.clockCircleDone,
-                      ]}
-                    >
-                      <Ionicons
-                        name={
-                          isEventCompleted(selectedEvent, completedEventKeys)
-                            ? "checkmark-done-outline"
-                            : "time-outline"
-                        }
-                        size={moderateScale(22)}
-                        color={isEventCompleted(selectedEvent, completedEventKeys) ? "#4E97E8" : "#111"}
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.mapWrap}>
-                  <View style={styles.fakeMap}>
-                    <Ionicons name="location" size={moderateScale(30)} color="#6A9FDB" />
-                  </View>
-                  <Text style={styles.mapAddress}>Add address here</Text>
-                </View>
-              </View>
+          ) : calendarSections.length > 0 ? (
+            <View style={styles.calendarAgendaWrap}>
+              {calendarSections.map((section) => (
+                <CalendarEventSection
+                  key={section.type}
+                  type={section.type}
+                  events={section.events}
+                  selectedBabyName={selectedBaby?.display_name || "Baby"}
+                  deleteMode={deleteMode}
+                  completedEventKeys={completedEventKeys}
+                  expandedKeys={calendarExpandedKeys}
+                  onToggleExpanded={toggleCalendarExpanded}
+                  onToggleComplete={handleToggleComplete}
+                  onEdit={openEditModal}
+                  onDelete={handleDeleteEvent}
+                  editModeAnim={editModeAnim}
+                  showEditIcons={showEditIcons}
+                />
+              ))}
             </View>
           ) : (
             <View style={styles.emptyState}>
@@ -757,285 +1221,82 @@ export default function ScheduleScreen({ navigation }: Props) {
             </View>
           )}
         </ScrollView>
-      ) : (
+      </Animated.View>
+
+      <Animated.View style={[styles.modeScene, styles.scheduleScene, scheduleScreenAnimatedStyle]} pointerEvents={mode === "schedule" ? "auto" : "none"}>
         <View style={styles.scheduleLayer}>
           <ScrollView
             ref={scrollRef}
-            contentContainerStyle={styles.timelineScreen}
+            contentContainerStyle={[
+              styles.timelineScreen,
+              dayEvents.length === 0 && styles.timelineScreenEmpty,
+            ]}
             showsVerticalScrollIndicator={false}
+            scrollEnabled={dayEvents.length > 0}
+            bounces={dayEvents.length > 0}
             scrollEventThrottle={16}
             onLayout={(e) => setTimelineViewportHeight(e.nativeEvent.layout.height)}
           >
-            <View style={styles.timelineLine} />
-
-            {dayEvents.map((ev, index) => {
-              const key = toEventKey(ev);
-              const isSelected = key === selectedEventId;
-              const isDone = isEventCompleted(ev, completedEventKeys);
-              const gapTop = index === 0 ? verticalScale(24) : verticalScale(44);
-
-              return (
-                <View
-                  key={key}
-                  style={[styles.timelineRow, { marginTop: gapTop }]}
-                  onLayout={(e) => {
-                    timelinePositionsRef.current[key] = {
-                      y: e.nativeEvent.layout.y,
-                      height: e.nativeEvent.layout.height,
-                    };
-                  }}
-                >
-                  <TouchableOpacity
-                    style={[
-                      styles.dotWrap,
-                      isSelected && styles.dotWrapSelected,
-                      isDone && styles.dotWrapDone,
-                    ]}
-                    disabled={deleteMode}
-                    onPress={() => {
-                      if (deleteMode) return;
-                      setSelectedEventId((prev) => (prev === key ? null : key));
-                    }}
-                  >
-                    {isSelected ? (
-                      isDone ? (
-                        <Ionicons name="checkmark" size={moderateScale(18)} color="#fff" />
-                      ) : (
-                        <View style={styles.innerDot} />
-                      )
-                    ) : isDone ? (
-                      <Ionicons name="checkmark" size={moderateScale(18)} color="#fff" />
-                    ) : null}
-                  </TouchableOpacity>
-
-                  <View style={styles.timelineRightArea}>
-                    {isSelected && selectedEvent && toEventKey(selectedEvent) === key ? (
-                      <View style={styles.focusCardRow}>
-                        <View style={styles.pointerWrap}>
-                          <View style={[styles.pointer, selectedIsCompleted && styles.pointerComplete]} />
-                        </View>
-
-                        <View style={[styles.focusCard, selectedIsCompleted && styles.focusCardComplete]}>
-                          {deleteMode && (
-                            <TouchableOpacity
-                              style={styles.deleteBadgeFloating}
-                              onPress={() => handleDeleteEvent(ev)}
-                            >
-                              <Ionicons name="close" size={moderateScale(14)} color="#fff" />
-                            </TouchableOpacity>
-                          )}
-
-                          <View
-                            style={[
-                              styles.focusHeaderRow,
-                              selectedIsCompleted && styles.focusHeaderRowComplete,
-                            ]}
-                          >
-                            <View
-                              style={[
-                                styles.nextEventPill,
-                                selectedIsCompleted && styles.nextEventPillComplete,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.nextEventPillText,
-                                  selectedIsCompleted && styles.nextEventPillTextComplete,
-                                ]}
-                              >
-                                {selectedEventTimingLabel}
-                              </Text>
-                            </View>
-                            <Text
-                              style={[
-                                styles.focusTime,
-                                selectedIsCompleted && styles.focusTimeComplete,
-                              ]}
-                            >
-                              {selectedEvent.time || "--:--"}
-                            </Text>
-                          </View>
-
-                          <Text
-                            style={[
-                              styles.focusTitle,
-                              selectedIsCompleted && styles.focusTitleComplete,
-                            ]}
-                          >
-                            {getDisplayTitle(selectedEvent)}
-                          </Text>
-
-                          <Text
-                            style={[
-                              styles.focusDescription,
-                              selectedIsCompleted && styles.focusDescriptionComplete,
-                            ]}
-                          >
-                            {selectedEvent.description || "No extra instructions for this event."}
-                          </Text>
-
-                          <View style={styles.focusMetaRowLower}>
-                            <View style={styles.focusTypeWrap}>
-                              <View
-                                style={[
-                                  styles.typeDot,
-                                  { backgroundColor: COLORS[selectedEvent.type].dot },
-                                ]}
-                              />
-                              <Text style={styles.focusTypeText}>
-                                {getTypeLabel(selectedEvent.type)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.focusFooterRow}>
-                            <TouchableOpacity
-                              style={[
-                                styles.completeButton,
-                                selectedIsCompleted && styles.completeButtonDone,
-                              ]}
-                              onPress={() => handleToggleComplete(selectedEvent)}
-                            >
-                              <Text
-                                style={[
-                                  styles.completeButtonText,
-                                  selectedIsCompleted && styles.completeButtonTextDone,
-                                ]}
-                              >
-                                {selectedIsCompleted ? "Completed" : "Complete Task"}
-                              </Text>
-                            </TouchableOpacity>
-
-                            <View
-                              style={[
-                                styles.clockCircle,
-                                selectedIsCompleted && styles.clockCircleDone,
-                              ]}
-                            >
-                              <Ionicons
-                                name={selectedIsCompleted ? "checkmark-done-outline" : "time-outline"}
-                                size={moderateScale(22)}
-                                color={selectedIsCompleted ? "#4E97E8" : "#111"}
-                              />
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                    ) : (
-                      <>
-                        <View style={styles.eventStripRow}>
-                          <TouchableOpacity
-                            style={[
-                              styles.eventStrip,
-                              isDone && styles.eventStripDone,
-                              deleteMode && styles.eventStripDeleteMode,
-                            ]}
-                            activeOpacity={deleteMode ? 1 : 0.8}
-                            onPress={() => {
-                              if (deleteMode) return;
-                              setSelectedEventId((prev) => (prev === key ? null : key));
-                            }}
-                          >
-                            <View
-                              style={[
-                                styles.eventTitleCell,
-                                styles.eventTitleCellExpanded,
-                                isDone && styles.eventTitleCellDone,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.eventStripText,
-                                  isDone && styles.eventStripTextDone,
-                                ]}
-                                numberOfLines={1}
-                              >
-                                {getDisplayTitle(ev)}
-                              </Text>
-                            </View>
-
-                            <View
-                              style={[
-                                styles.eventTimeCell,
-                                styles.eventTimeCellRight,
-                                isDone && styles.eventTimeCellDone,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.eventStripText,
-                                  isDone && styles.eventStripTextDone,
-                                ]}
-                              >
-                                {ev.time || "--:--"}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.stripMetaRow}>
-                          <View style={styles.stripTypeWrap}>
-                            <View
-                              style={[
-                                styles.typeDotSmall,
-                                { backgroundColor: COLORS[ev.type].dot },
-                              ]}
-                            />
-                            <Text style={styles.stripTypeText}>
-                              {getTypeLabel(ev.type)}
-                            </Text>
-                          </View>
-
-                          {isDone && (
-                            <Text style={[styles.statusText, styles.statusTextDone]}>
-                              Completed
-                            </Text>
-                          )}
-
-                          {deleteMode && (
-                            <TouchableOpacity
-                              style={styles.deleteInlineButton}
-                              onPress={() => handleDeleteEvent(ev)}
-                            >
-                              <Ionicons name="close-circle" size={moderateScale(24)} color="#E35D5B" />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-
-                        {!deleteMode && (() => {
-                          const relativeLabel = getRelativeLabel(ev);
-                          const timeState = getEventTimeState(ev);
-
-                          if (timeState === "past") {
-                            return (
-                              <View style={styles.relativeRow}>
-                                <Text style={styles.relativeLabelPassed}>Passed</Text>
-                                <Ionicons
-                                  name="checkmark-done-outline"
-                                  size={moderateScale(18)}
-                                  color="#8A8A8A"
-                                />
-                              </View>
-                            );
-                          }
-
-                          if (!relativeLabel) return null;
-
-                          return (
-                            <View style={styles.relativeRow}>
-                              <Text style={styles.relativeLabel}>{relativeLabel}</Text>
-                              <Ionicons name="time-outline" size={moderateScale(18)} color="#777" />
-                            </View>
-                          );
-                        })()}
-                      </>
-                    )}
+            {dayEvents.length > 0 && (
+              <>
+                <AnimatedTimelineRail />
+                <View style={styles.dayBoundaryStartWrap} pointerEvents="none">
+                  <View style={styles.dayBoundaryRow}>
+                    <Ionicons name="sunny-outline" size={moderateScale(22)} color="rgba(113, 145, 181, 0.62)" />
+                    <Text style={styles.dayBoundaryText}>Start of the day</Text>
                   </View>
                 </View>
-              );
-            })}
+              </>
+            )}
 
-            <View style={{ height: verticalScale(160) }} />
+            {dayEvents.length === 0 ? (
+              <View style={styles.emptyScheduleWrap}>
+                <Ionicons name="time-outline" size={moderateScale(42)} color="#AFC7E4" />
+                <Text style={styles.emptyScheduleTitle}>No events yet for this day</Text>
+                <Text style={styles.emptyScheduleText}>
+                  No events are happening yet. Create one to start building the day.
+                </Text>
+              </View>
+            ) : (
+              dayEvents.map((ev, index) => {
+                const key = toEventKey(ev);
+                return (
+                  <TimelineEventRow
+                    key={key}
+                    ev={ev}
+                    index={index}
+                    deleteMode={deleteMode}
+                    isSelected={key === selectedEventId}
+                    isDone={isEventCompleted(ev, completedEventKeys)}
+                    selectedEvent={selectedEvent}
+                    selectedEventTimingLabel={selectedEventTimingLabel}
+                    selectedIsCompleted={selectedIsCompleted}
+                    completedEventKeys={completedEventKeys}
+                    isNextUpcoming={key === nextUpcomingEventKey}
+                    onSelectEvent={handleSelectEvent}
+                    onEdit={openEditModal}
+                    onDelete={handleDeleteEvent}
+                    onToggleComplete={handleToggleComplete}
+                    editModeAnim={editModeAnim}
+                    showEditIcons={showEditIcons}
+                    onMeasure={(layout) => {
+                      timelinePositionsRef.current[key] = layout;
+                    }}
+                  />
+                );
+              })
+            )}
+
+            {dayEvents.length > 0 && (
+              <View style={styles.dayBoundaryEndWrap} pointerEvents="none">
+                <View style={styles.dayBoundaryRow}>
+                  <Ionicons name="moon-outline" size={moderateScale(22)} color="rgba(113, 145, 181, 0.62)" />
+                  <Text style={styles.dayBoundaryText}>End of the day</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={{ height: verticalScale(52) }} />
           </ScrollView>
 
           {showTypeMenu && (
@@ -1083,7 +1344,7 @@ export default function ScheduleScreen({ navigation }: Props) {
           >
             <Ionicons
               name={showTypeMenu ? "close" : "add"}
-              size={moderateScale(24)}
+              size={moderateScale(20)}
               color="#fff"
             />
             <Text style={styles.floatingManualButtonText}>
@@ -1091,7 +1352,15 @@ export default function ScheduleScreen({ navigation }: Props) {
             </Text>
           </TouchableOpacity>
         </View>
+      </Animated.View>
+      </Animated.View>
+
+      {contentTransitioning && (
+        <View style={styles.sceneLoadingOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={colors.primaryDark} />
+        </View>
       )}
+      </View>
 
       <AddEventModal
         visible={modalVisible}
@@ -1102,12 +1371,37 @@ export default function ScheduleScreen({ navigation }: Props) {
         babies={babies}
         modalBaby={modalBaby}
         feedback={modalVisible ? feedback : null}
+        modeLabel="Create"
+        saveLabel="Save Event"
         onSelectBaby={(b) => setModalBaby(b)}
         onClose={() => {
           setModalVisible(false);
           setFeedback(null);
         }}
         onSave={handleSave}
+        onChange={(key, val) => setForm((f) => ({ ...f, [key]: val }))}
+        onChangeDate={(key, date) => setForm((f) => ({ ...f, [key]: date }))}
+        onOpenPicker={(key) => setPickerOpen(key)}
+      />
+
+      <AddEventModal
+        visible={editModalVisible}
+        type={modalType}
+        form={form}
+        saving={saving}
+        selectedDate={selectedDate}
+        babies={babies}
+        modalBaby={modalBaby}
+        feedback={editModalVisible ? feedback : null}
+        modeLabel="Edit"
+        saveLabel="Update Event"
+        onSelectBaby={(b) => setModalBaby(b)}
+        onClose={() => {
+          setEditModalVisible(false);
+          setFeedback(null);
+          setEditingEvent(null);
+        }}
+        onSave={handleSaveEdit}
         onChange={(key, val) => setForm((f) => ({ ...f, [key]: val }))}
         onChangeDate={(key, date) => setForm((f) => ({ ...f, [key]: date }))}
         onOpenPicker={(key) => setPickerOpen(key)}
@@ -1125,6 +1419,815 @@ export default function ScheduleScreen({ navigation }: Props) {
   );
 }
 
+
+function AnimatedTimelineRail() {
+  const endAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(endAnim, {
+        toValue: 1,
+        duration: 3600,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [endAnim]);
+
+  const topTranslateY = endAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, verticalScale(14)],
+  });
+
+  const bottomTranslateY = endAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -verticalScale(14)],
+  });
+
+  return (
+    <View style={styles.timelineRailWrap} pointerEvents="none">
+      <Animated.View style={[styles.timelineFadeTop, { transform: [{ translateY: topTranslateY }] }]}>
+        {Array.from({ length: 8 }).map((_, idx) => (
+          <View
+            key={`top-${idx}`}
+            style={[
+              styles.timelineFadeDot,
+              { opacity: 0.18 + idx * 0.08 },
+            ]}
+          />
+        ))}
+      </Animated.View>
+
+      <View style={styles.timelineLineSolid}>
+        {Array.from({ length: 8 }).map((_, idx) => (
+          <Ionicons
+            key={`chev-${idx}`}
+            name="chevron-down"
+            size={moderateScale(8)}
+            color="rgba(255,255,255,0.55)"
+            style={styles.timelineLineChevron}
+          />
+        ))}
+      </View>
+
+      <Animated.View style={[styles.timelineFadeBottom, { transform: [{ translateY: bottomTranslateY }] }]}>
+        {Array.from({ length: 16 }).map((_, idx) => (
+          <View
+            key={`bottom-${idx}`}
+            style={[
+              styles.timelineFadeDot,
+              { opacity: 0.74 - idx * 0.08 },
+            ]}
+          />
+        ))}
+      </Animated.View>
+    </View>
+  );
+}
+
+function TimelineEventRow({
+  ev,
+  index,
+  deleteMode,
+  isSelected,
+  isDone,
+  selectedEvent,
+  selectedEventTimingLabel,
+  selectedIsCompleted,
+  completedEventKeys,
+  isNextUpcoming,
+  onSelectEvent,
+  onEdit,
+  onDelete,
+  onToggleComplete,
+  editModeAnim,
+  showEditIcons,
+  onMeasure,
+}: {
+  ev: ScheduleEvent;
+  index: number;
+  deleteMode: boolean;
+  isSelected: boolean;
+  isDone: boolean;
+  selectedEvent: ScheduleEvent | null;
+  selectedEventTimingLabel: string;
+  selectedIsCompleted: boolean;
+  completedEventKeys: string[];
+  isNextUpcoming: boolean;
+  onSelectEvent: (key: string) => void;
+  onEdit: (ev: ScheduleEvent) => void;
+  onDelete: (ev: ScheduleEvent) => void;
+  onToggleComplete: (ev: ScheduleEvent) => void;
+  editModeAnim: Animated.Value;
+  showEditIcons: boolean;
+  onMeasure: (layout: { y: number; height: number }) => void;
+}) {
+  const key = toEventKey(ev);
+  const gapTop = index === 0 ? verticalScale(24) : verticalScale(44);
+  const anim = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
+  const nextPulseAnim = useRef(new Animated.Value(0.55)).current;
+  const nextPulseScale = nextPulseAnim.interpolate({
+    inputRange: [0.4, 0.92],
+    outputRange: [0.85, 1.25],
+  });
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: isSelected ? 1 : 0,
+      duration: 390,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [anim, isSelected]);
+
+  useEffect(() => {
+    if (!isNextUpcoming || isDone) {
+      nextPulseAnim.stopAnimation();
+      nextPulseAnim.setValue(0.55);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(nextPulseAnim, {
+          toValue: 0.92,
+          duration: 1300,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(nextPulseAnim, {
+          toValue: 0.4,
+          duration: 1300,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [isNextUpcoming, isSelected, nextPulseAnim]);
+
+  const displayEvent = isSelected && selectedEvent && toEventKey(selectedEvent) === key ? selectedEvent : ev;
+  const animatedCardStyle = {
+    opacity: anim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.9, 1],
+    }),
+    transform: [
+      {
+        scale: anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.985, 1],
+        }),
+      },
+    ],
+  };
+
+
+
+  const topEditIconsStyle = {
+    opacity: editModeAnim,
+    transform: [
+      {
+        translateY: editModeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-12, 0],
+        }),
+      },
+    ],
+  };
+
+  const inlineEditIconsStyle = {
+    opacity: editModeAnim,
+    transform: [
+      {
+        translateY: editModeAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [12, 0],
+        }),
+      },
+    ],
+  };
+
+  return (
+    <View
+      style={[styles.timelineRow, { marginTop: gapTop }]}
+      onLayout={(e) => {
+        onMeasure({
+          y: e.nativeEvent.layout.y,
+          height: e.nativeEvent.layout.height,
+        });
+      }}
+    >
+      <TouchableOpacity
+        style={[
+          styles.dotWrap,
+          isSelected && styles.dotWrapSelected,
+          isDone && styles.dotWrapDone,
+          isNextUpcoming && !isDone && styles.dotWrapUpcoming,
+        ]}
+        disabled={deleteMode}
+        onPress={() => {
+          if (deleteMode) return;
+          onSelectEvent(key);
+        }}
+      >
+        {isSelected ? (
+          isDone ? (
+            <Ionicons name="checkmark" size={moderateScale(18)} color="#fff" />
+          ) : (
+            <View style={styles.innerDot} />
+          )
+        ) : isDone ? (
+          <Ionicons name="checkmark" size={moderateScale(18)} color="#fff" />
+        ) : null}
+
+        {isNextUpcoming && !isDone && (
+          <View style={styles.upcomingDotPulseWrap}>
+            <Animated.View
+              style={[
+                styles.upcomingDotPulse,
+                {
+                  opacity: nextPulseAnim,
+                  transform: [{ scale: nextPulseScale }],
+                },
+              ]}
+            />
+            <View
+              style={[
+                styles.upcomingDotCore,
+                isSelected && styles.upcomingDotCoreSelected,
+              ]}
+            />
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <Animated.View style={[styles.timelineRightArea, animatedCardStyle]}>
+        {isSelected && displayEvent ? (
+          <View style={styles.focusCardRow}>
+            <View style={styles.pointerWrap}>
+              <View style={[styles.pointer, selectedIsCompleted && styles.pointerComplete]} />
+            </View>
+
+            <View style={[styles.focusCard, selectedIsCompleted && styles.focusCardComplete]}>
+              {showEditIcons && (
+                <Animated.View pointerEvents={deleteMode ? "auto" : "none"} style={[styles.editDeleteFloatingRow, topEditIconsStyle]}>
+                  <TouchableOpacity style={styles.editActionButton} onPress={() => onEdit(ev)}>
+                    <Ionicons name="create-outline" size={moderateScale(20)} color="#6B9FDE" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.deleteActionButton} onPress={() => onDelete(ev)}>
+                    <Ionicons name="close-circle" size={moderateScale(24)} color="#E35D5B" />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+
+              <View
+                style={[
+                  styles.focusHeaderRow,
+                  selectedIsCompleted && styles.focusHeaderRowComplete,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.nextEventPill,
+                    selectedIsCompleted && styles.nextEventPillComplete,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.nextEventPillText,
+                      selectedIsCompleted && styles.nextEventPillTextComplete,
+                    ]}
+                  >
+                    {selectedEventTimingLabel}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.focusTime,
+                    selectedIsCompleted && styles.focusTimeComplete,
+                  ]}
+                >
+                  {displayEvent.time || "--:--"}
+                </Text>
+              </View>
+
+              <Text
+                style={[
+                  styles.focusTitle,
+                  selectedIsCompleted && styles.focusTitleComplete,
+                ]}
+              >
+                {getDisplayTitle(displayEvent)}
+              </Text>
+
+              <Text
+                style={[
+                  styles.focusDescription,
+                  selectedIsCompleted && styles.focusDescriptionComplete,
+                ]}
+              >
+                {displayEvent.description || "No extra instructions for this event."}
+              </Text>
+
+              <View style={styles.focusMetaRowLower}>
+                <View style={styles.focusTypeWrap}>
+                  <View
+                    style={[
+                      styles.typeDot,
+                      { backgroundColor: COLORS[displayEvent.type].dot },
+                    ]}
+                  />
+                  <Text style={styles.focusTypeText}>{getTypeLabel(displayEvent.type)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.focusFooterRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.completeButton,
+                    selectedIsCompleted && styles.completeButtonDone,
+                  ]}
+                  onPress={() => onToggleComplete(displayEvent)}
+                >
+                  <Text
+                    style={[
+                      styles.completeButtonText,
+                      selectedIsCompleted && styles.completeButtonTextDone,
+                    ]}
+                  >
+                    {selectedIsCompleted ? "Completed" : "Complete Task"}
+                  </Text>
+                </TouchableOpacity>
+
+                <View
+                  style={[
+                    styles.clockCircle,
+                    selectedIsCompleted && styles.clockCircleDone,
+                  ]}
+                >
+                  <Ionicons
+                    name={selectedIsCompleted ? "checkmark-done-outline" : "time-outline"}
+                    size={moderateScale(22)}
+                    color={selectedIsCompleted ? "#4E97E8" : "#111"}
+                  />
+                </View>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <>
+            <View style={styles.eventStripRow}>
+              <TouchableOpacity
+                style={[
+                  styles.eventStrip,
+                  isDone && styles.eventStripDone,
+                  deleteMode && styles.eventStripDeleteMode,
+                ]}
+                activeOpacity={deleteMode ? 1 : 0.8}
+                onPress={() => {
+                  if (deleteMode) return;
+                  onSelectEvent(key);
+                }}
+              >
+                <View
+                  style={[
+                    styles.eventTitleCell,
+                    styles.eventTitleCellExpanded,
+                    isDone && styles.eventTitleCellDone,
+                  ]}
+                >
+                  <Text
+                    style={[styles.eventStripText, isDone && styles.eventStripTextDone]}
+                    numberOfLines={1}
+                  >
+                    {getDisplayTitle(ev)}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.eventTimeCell,
+                    styles.eventTimeCellRight,
+                    isDone && styles.eventTimeCellDone,
+                  ]}
+                >
+                  <Text style={[styles.eventStripText, isDone && styles.eventStripTextDone]}>
+                    {ev.time || "--:--"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.stripMetaRow}>
+              <View style={styles.stripTypeWrap}>
+                <View style={[styles.typeDotSmall, { backgroundColor: COLORS[ev.type].dot }]} />
+                <Text style={styles.stripTypeText}>{getTypeLabel(ev.type)}</Text>
+              </View>
+
+              {isDone && <Text style={[styles.statusText, styles.statusTextDone]}>Completed</Text>}
+
+              {showEditIcons && (
+                <Animated.View pointerEvents={deleteMode ? "auto" : "none"} style={[styles.inlineEditDeleteRow, inlineEditIconsStyle]}>
+                  <TouchableOpacity style={styles.editActionButton} onPress={() => onEdit(ev)}>
+                    <Ionicons name="create-outline" size={moderateScale(20)} color="#6B9FDE" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.deleteActionButton} onPress={() => onDelete(ev)}>
+                    <Ionicons name="close-circle" size={moderateScale(24)} color="#E35D5B" />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+            </View>
+
+            {(() => {
+              const relativeLabel = getRelativeLabel(ev);
+              const timeState = getEventTimeState(ev);
+
+              if (timeState === "past") {
+                return (
+                  <View style={styles.relativeRow}>
+                    <Text style={styles.relativeLabelPassed}>Passed</Text>
+                    <Ionicons
+                      name="checkmark-done-outline"
+                      size={moderateScale(18)}
+                      color="#8A8A8A"
+                    />
+                  </View>
+                );
+              }
+
+              if (!relativeLabel) return null;
+
+              return (
+                <View style={styles.relativeRow}>
+                  <Text style={styles.relativeLabel}>{relativeLabel}</Text>
+                  <Ionicons name="time-outline" size={moderateScale(18)} color="#777" />
+                </View>
+              );
+            })()}
+          </>
+        )}
+      </Animated.View>
+    </View>
+  );
+}
+
+
+function FadingCellText({
+  text,
+  width,
+  color,
+  fontSize,
+  fontWeight,
+  expanded,
+  fadeColor = "#F3F3F3",
+}: {
+  text: string;
+  width: number | string;
+  color: string;
+  fontSize: number;
+  fontWeight: any;
+  expanded?: boolean;
+  fadeColor?: string;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [currentShift, setCurrentShift] = useState(0);
+  const shouldAnimate = expanded && text.length > 14;
+  const distance = Math.max(0, (text.length - 14) * scale(5.5));
+
+  useEffect(() => {
+    const id = anim.addListener(({ value }) => setCurrentShift(value));
+    return () => anim.removeListener(id);
+  }, [anim]);
+
+  useEffect(() => {
+    if (!shouldAnimate) {
+      anim.stopAnimation();
+      anim.setValue(0);
+      setCurrentShift(0);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(900),
+        Animated.timing(anim, {
+          toValue: -distance,
+          duration: 2600,
+          easing: Easing.inOut(Easing.linear),
+          useNativeDriver: true,
+        }),
+        Animated.delay(1800),
+        Animated.timing(anim, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.delay(2400),
+      ])
+    );
+
+    loop.start();
+    return () => {
+      loop.stop();
+      anim.setValue(0);
+      setCurrentShift(0);
+    };
+  }, [anim, shouldAnimate, text, distance]);
+
+  const showRightFade = text.length > 14 && (!expanded || currentShift > -distance + scale(3));
+  const showLeftFade = expanded && text.length > 14 && currentShift < -scale(3);
+
+  return (
+    <View style={[styles.fadeTextWrap, { width }]}>
+      <Animated.Text
+        numberOfLines={1}
+        style={{
+          color,
+          fontSize,
+          fontWeight,
+          width: "100%",
+          transform: [{ translateX: anim }],
+        }}
+      >
+        {text}
+      </Animated.Text>
+
+      {showLeftFade && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[fadeColor, hexToRgba(fadeColor, 0)]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[styles.fadeTextOverlay, styles.fadeTextOverlayLeft]}
+        />
+      )}
+
+      {showRightFade && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[hexToRgba(fadeColor, 0), fadeColor]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[styles.fadeTextOverlay, styles.fadeTextOverlayRight]}
+        />
+      )}
+    </View>
+  );
+}
+
+function CalendarEventSection({
+  type,
+  events,
+  selectedBabyName,
+  deleteMode,
+  completedEventKeys,
+  expandedKeys,
+  onToggleExpanded,
+  onToggleComplete,
+  onEdit,
+  onDelete,
+  editModeAnim,
+  showEditIcons,
+}: {
+  type: EventType;
+  events: ScheduleEvent[];
+  selectedBabyName: string;
+  deleteMode: boolean;
+  completedEventKeys: string[];
+  expandedKeys: string[];
+  onToggleExpanded: (key: string) => void;
+  onToggleComplete: (ev: ScheduleEvent) => void;
+  onEdit: (ev: ScheduleEvent) => void;
+  onDelete: (ev: ScheduleEvent) => void;
+  editModeAnim: Animated.Value;
+  showEditIcons: boolean;
+}) {
+  const meta = CALENDAR_SECTION_META[type];
+  const isActivity = type === "activity";
+  const titleWidth = isActivity ? (width < 390 ? scale(150) : scale(180)) : (width < 390 ? scale(174) : scale(206));
+  const nameWidth = isActivity ? scale(92) : scale(84);
+
+  return (
+    <View style={styles.calendarSectionWrap}>
+      <LinearGradient
+        colors={[meta.header, meta.header]}
+        style={styles.calendarSectionHeader}
+      >
+        <Text style={styles.calendarSectionHeaderText}>{meta.title}</Text>
+        <View style={styles.calendarSectionHeaderRight}>
+          <Text style={styles.calendarSectionCountText}>{events.length}</Text>
+          <Ionicons name={meta.icon as any} size={moderateScale(20)} color="#FFFFFF" />
+        </View>
+      </LinearGradient>
+
+      {events.map((ev) => {
+        const key = toEventKey(ev);
+        const expanded = expandedKeys.includes(key);
+        const isCompleted = isEventCompleted(ev, completedEventKeys);
+        const completedBg = meta.completedBg;
+        const panelBg = isCompleted ? completedBg : "#F3F3F3";
+        const lineColor = isCompleted ? hexToRgba("#FFFFFF", 0.55) : meta.border;
+        const calendarActionsStyle = {
+          opacity: editModeAnim,
+          transform: [
+            {
+              translateY: editModeAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-10, 0],
+              }),
+            },
+          ],
+        };
+
+        return (
+          <Animated.View
+            key={key}
+            style={[
+              styles.calendarItemWrap,
+              deleteMode && styles.calendarItemWrapEditMode,
+              {
+                transform: [
+                  {
+                    translateY: editModeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-20, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {showEditIcons && (
+              <Animated.View pointerEvents={deleteMode ? "auto" : "none"} style={[styles.calendarItemActions, calendarActionsStyle]}>
+                <TouchableOpacity style={styles.editActionButton} onPress={() => onEdit(ev)}>
+                  <Ionicons name="create-outline" size={moderateScale(20)} color="#6B9FDE" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteActionButton} onPress={() => onDelete(ev)}>
+                  <Ionicons name="close-circle" size={moderateScale(24)} color="#E35D5B" />
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
+            <View
+              style={[
+                styles.calendarEventCard,
+                { borderColor: lineColor, backgroundColor: panelBg },
+                expanded && styles.calendarEventCardExpanded,
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.88}
+                onPress={() => onToggleExpanded(key)}
+                style={[styles.calendarEventTopRow, { borderBottomColor: expanded ? lineColor : "transparent" }]}
+              >
+                <View
+                  style={[
+                    styles.calendarTitleCell,
+                    !isActivity && styles.calendarTitleCellWide,
+                    { borderRightColor: lineColor },
+                  ]}
+                >
+                  <FadingCellText
+                    text={getDisplayTitle(ev)}
+                    width="100%"
+                    color={isCompleted ? '#FFFFFF' : '#5A5A5A'}
+                    fontSize={moderateScale(13)}
+                    fontWeight="700"
+                    expanded={expanded}
+                    fadeColor={panelBg}
+                  />
+                </View>
+
+                <View
+                  style={[
+                    styles.calendarNameCell,
+                    !isActivity && styles.calendarNameCellCompact,
+                    { borderRightColor: lineColor },
+                  ]}
+                >
+                  <FadingCellText
+                    text={selectedBabyName}
+                    width="100%"
+                    color={isCompleted ? '#FFFFFF' : '#737373'}
+                    fontSize={moderateScale(13)}
+                    fontWeight="400"
+                    expanded={expanded}
+                    fadeColor={panelBg}
+                  />
+                </View>
+
+                <View style={styles.calendarTimeCell}>
+                  <Ionicons name="time-outline" size={moderateScale(16)} color={isCompleted ? '#FFFFFF' : '#6D6D6D'} />
+                  <Text style={[styles.calendarTimeText, isCompleted && styles.calendarTimeTextCompleted]}>
+                    {ev.time || '--:--'}
+                  </Text>
+                </View>
+
+                <View style={styles.calendarChevronCell}>
+                  <Ionicons
+                    name={expanded ? "chevron-up" : "chevron-down"}
+                    size={moderateScale(20)}
+                    color={isCompleted ? "#FFFFFF" : meta.border}
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {expanded && (
+                <View style={styles.calendarExpandedBody}>
+                  <Text style={[styles.calendarDescriptionText, isCompleted && styles.calendarDescriptionTextCompleted]}>
+                    {ev.description || 'No extra description provided for this event.'}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[styles.calendarCompleteButton, isCompleted && styles.calendarCompleteButtonDone, { backgroundColor: isCompleted ? hexToRgba('#FFFFFF', 0.22) : '#D9D9D9' }]}
+                    onPress={() => onToggleComplete(ev)}
+                  >
+                    <Ionicons
+                      name="checkmark"
+                      size={moderateScale(24)}
+                      color={isCompleted ? '#FFFFFF' : '#111111'}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </Animated.View>
+        );
+      })}
+    </View>
+  );
+}
+
+
+function HorizontalChevronScroll({
+  children,
+  contentContainerStyle,
+  style,
+}: {
+  children: React.ReactNode;
+  contentContainerStyle?: any;
+  style?: any;
+}) {
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [scrollX, setScrollX] = useState(0);
+
+  const isScrollable = contentWidth > containerWidth + 4;
+  const showLeft = isScrollable && scrollX > 6;
+  const showRight = isScrollable && scrollX < contentWidth - containerWidth - 6;
+
+  return (
+    <View
+      style={[styles.horizontalScrollShell, style]}
+      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+    >
+      {showLeft && (
+        <Ionicons
+          name="chevron-back"
+          size={moderateScale(18)}
+          color="#7AA6D8"
+          style={[styles.scrollChevron, styles.scrollChevronLeft]}
+          pointerEvents="none"
+        />
+      )}
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onContentSizeChange={(w) => setContentWidth(w)}
+        onScroll={(e) => setScrollX(e.nativeEvent.contentOffset.x)}
+        contentContainerStyle={[
+          styles.horizontalScrollContent,
+          contentContainerStyle,
+        ]}
+      >
+        {children}
+      </ScrollView>
+
+      {showRight && (
+        <Ionicons
+          name="chevron-forward"
+          size={moderateScale(18)}
+          color="#7AA6D8"
+          style={[styles.scrollChevron, styles.scrollChevronRight]}
+          pointerEvents="none"
+        />
+      )}
+    </View>
+  );
+}
+
+
 interface ModalProps {
   visible: boolean;
   type: EventType;
@@ -1134,6 +2237,8 @@ interface ModalProps {
   babies: any[];
   modalBaby: any;
   feedback: { type: "success" | "error"; message: string } | null;
+  modeLabel?: string;
+  saveLabel?: string;
   onSelectBaby: (b: any) => void;
   onClose: () => void;
   onSave: () => void;
@@ -1147,10 +2252,11 @@ function AddEventModal({
   type,
   form,
   saving,
-  selectedDate,
   babies,
   modalBaby,
   feedback,
+  modeLabel = "Create",
+  saveLabel = "Save Event",
   onSelectBaby,
   onClose,
   onSave,
@@ -1170,13 +2276,15 @@ function AddEventModal({
 
   const typeTitle =
     type === "activity"
-      ? "Add Activity"
+      ? `${modeLabel} Activity`
       : type === "task"
-      ? "Add Task"
-      : "Add Reminder";
+      ? `${modeLabel} Task`
+      : `${modeLabel} Reminder`;
 
   const typeSubtitle =
-    type === "activity"
+    modeLabel === "Edit"
+      ? "Update the selected event using the same layout as creation"
+      : type === "activity"
       ? "Log a baby activity for the selected day"
       : type === "task"
       ? "Create a manual task for the schedule"
@@ -1270,7 +2378,7 @@ function AddEventModal({
                 Select Baby <Text style={styles.requiredStar}>*</Text>
               </Text>
 
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <HorizontalChevronScroll>
                 <View style={styles.modalChipRow}>
                   {babies.map((b) => {
                     const active = modalBaby?.baby_id === b.baby_id;
@@ -1302,7 +2410,7 @@ function AddEventModal({
                     );
                   })}
                 </View>
-              </ScrollView>
+              </HorizontalChevronScroll>
             </View>
 
             {type === "activity" ? (
@@ -1312,7 +2420,7 @@ function AddEventModal({
                     Activity Type <Text style={styles.requiredStar}>*</Text>
                   </Text>
 
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <HorizontalChevronScroll>
                     <View style={styles.modalChipRow}>
                       {activityTypes.map((at) => {
                         const active = form.activityType === at;
@@ -1338,7 +2446,7 @@ function AddEventModal({
                         );
                       })}
                     </View>
-                  </ScrollView>
+                  </HorizontalChevronScroll>
                 </View>
 
                 <DtRow
@@ -1484,7 +2592,7 @@ function AddEventModal({
               {saving ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text style={styles.modalSaveBtnText}>Save Event</Text>
+                <Text style={styles.modalSaveBtnText}>{saveLabel}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1509,6 +2617,7 @@ const styles = StyleSheet.create({
 
   segmentedControl: {
     flexDirection: "row",
+    position: "relative",
     backgroundColor: "#EFEFEF",
     borderRadius: moderateScale(16),
     borderWidth: 1,
@@ -1520,18 +2629,35 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(6),
   },
 
+  segmentIndicator: {
+    position: "absolute",
+    left: scale(2),
+    top: scale(2),
+    bottom: scale(2),
+    width: "49%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: moderateScale(14),
+    shadowColor: "rgba(79,141,212,0.25)",
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+
   segmentHalf: {
     width: "50%",
+    zIndex: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: verticalScale(12),
+    backgroundColor: "transparent",
+  },
+
+  segmentTabContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: scale(8),
-    paddingVertical: verticalScale(12),
-    backgroundColor: "#EFEFEF",
-  },
-
-  segmentHalfActive: {
-    backgroundColor: "#FFFFFF",
   },
 
   segmentLabel: {
@@ -1541,7 +2667,7 @@ const styles = StyleSheet.create({
   },
 
   segmentLabelActive: {
-    color: "#555",
+    color: "#4F8DD4",
   },
 
   headerRow: {
@@ -1566,6 +2692,31 @@ const styles = StyleSheet.create({
     color: "#EAF3FF",
   },
 
+  headerActionsCol: {
+    alignItems: "flex-end",
+    gap: verticalScale(8),
+  },
+
+  headerDateControlWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    minWidth: 0,
+  },
+
+  headerDateChevronButton: {
+    width: moderateScale(30),
+    height: moderateScale(30),
+    borderRadius: moderateScale(15),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  headerDateTextWrap: {
+    minWidth: 0,
+    marginHorizontal: scale(2),
+  },
+
   editButton: {
     backgroundColor: "#EAEAEA",
     borderRadius: moderateScale(18),
@@ -1577,9 +2728,9 @@ const styles = StyleSheet.create({
   },
 
   editButtonActive: {
-    backgroundColor: "#FFF2F1",
+    backgroundColor: "#DCEEFF",
     borderWidth: 1,
-    borderColor: "#F1B3AF",
+    borderColor: "#9FC8F2",
   },
 
   editButtonText: {
@@ -1589,12 +2740,69 @@ const styles = StyleSheet.create({
   },
 
   editButtonTextActive: {
-    color: "#D9534F",
+    color: "#4F8DD4",
   },
 
   babyPicker: {
     paddingTop: verticalScale(10),
-    paddingHorizontal: scale(10),
+    paddingHorizontal: scale(26),
+  },
+
+  horizontalScrollShell: {
+    position: "relative",
+    overflow: "hidden",
+  },
+
+  horizontalScrollContent: {
+    paddingHorizontal: scale(26),
+  },
+
+  scrollChevron: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -moderateScale(9),
+    zIndex: 3,
+    backgroundColor: "rgba(243,247,252,0.92)",
+    borderRadius: moderateScale(10),
+    paddingHorizontal: scale(2),
+  },
+
+  scrollChevronLeft: {
+    left: scale(6),
+  },
+
+  scrollChevronRight: {
+    right: scale(6),
+  },
+
+  modeContent: {
+    flex: 1,
+    position: "relative",
+    overflow: "hidden",
+  },
+
+  sceneContentFadeLayer: {
+    flex: 1,
+  },
+
+  sceneLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(243,243,243,0.18)",
+    zIndex: 20,
+  },
+
+  modeScene: {
+    flex: 1,
+  },
+
+  calendarScene: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  scheduleScene: {
+    ...StyleSheet.absoluteFillObject,
   },
 
   babyChip: {
@@ -1655,44 +2863,6 @@ const styles = StyleSheet.create({
 
   calendar: {
     paddingBottom: verticalScale(6),
-  },
-
-  calendarInfoRow: {
-    marginTop: verticalScale(16),
-    marginLeft: 0,
-    marginRight: scale(10),
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: scale(10),
-  },
-
-  smallInfoPill: {
-    backgroundColor: "#89B9ED",
-    borderTopRightRadius: 16,
-    borderBottomRightRadius: 16,
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(8),
-  },
-
-  smallInfoPillRight: {
-    borderTopRightRadius: 18,
-    borderBottomRightRadius: 18,
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 18,
-    backgroundColor: "#B9D2EF",
-  },
-
-  smallInfoPillText: {
-    color: "#FFF",
-    fontSize: moderateScale(21),
-    fontWeight: "900",
-  },
-
-  smallInfoPillTextBlue: {
-    color: "#4F8DD4",
-    fontSize: moderateScale(18),
-    fontWeight: "800",
   },
 
   upcomingCard: {
@@ -1857,18 +3027,123 @@ const styles = StyleSheet.create({
   },
 
   timelineScreen: {
-    paddingBottom: verticalScale(220),
+    paddingBottom: verticalScale(104),
     paddingHorizontal: scale(8),
-    paddingTop: verticalScale(180),
+    paddingTop: verticalScale(112),
   },
 
-  timelineLine: {
+  timelineScreenEmpty: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingTop: verticalScale(40),
+    paddingBottom: verticalScale(140),
+  },
+
+  timelineRailWrap: {
     position: "absolute",
     left: scale(56),
     top: 0,
     bottom: 0,
+    width: 8,
+    alignItems: "center",
+    overflow: "hidden",
+  },
+
+  timelineFadeTop: {
+    width: 8,
+    paddingTop: verticalScale(8),
+    alignItems: "center",
+    gap: verticalScale(5),
+  },
+
+  timelineFadeBottom: {
+    width: 8,
+    paddingBottom: verticalScale(28),
+    alignItems: "center",
+    gap: verticalScale(5),
+    marginTop: "auto",
+  },
+
+  timelineFadeDot: {
+    width: 4,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#73ADF0",
+  },
+
+  dayBoundaryStartWrap: {
+    marginTop: verticalScale(6),
+    marginLeft: scale(92),
+    marginRight: scale(12),
+    marginBottom: verticalScale(12),
+    alignItems: "center",
+  },
+
+  dayBoundaryEndWrap: {
+    marginTop: verticalScale(18),
+    marginLeft: scale(92),
+    marginRight: scale(12),
+    marginBottom: verticalScale(10),
+    alignItems: "center",
+  },
+
+  dayBoundaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(8),
+  },
+
+  dayBoundaryText: {
+    fontSize: moderateScale(24),
+    color: "rgba(113, 145, 181, 0.58)",
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    textAlign: "center",
+  },
+
+  timelineLineSolid: {
+    flex: 1,
     width: 4,
     backgroundColor: "#73ADF0",
+    borderRadius: 4,
+    marginVertical: verticalScale(8),
+    alignItems: "center",
+    justifyContent: "space-evenly",
+    overflow: "hidden",
+  },
+
+  timelineLineChevron: {
+    marginVertical: verticalScale(1),
+    opacity: 0.55,
+  },
+
+  emptyScheduleWrap: {
+    marginTop: 0,
+    marginHorizontal: scale(24),
+    backgroundColor: "#F8FBFF",
+    borderWidth: 1,
+    borderColor: "#D5E3F5",
+    borderRadius: moderateScale(18),
+    paddingVertical: verticalScale(28),
+    paddingHorizontal: scale(22),
+    alignItems: "center",
+  },
+
+  emptyScheduleTitle: {
+    marginTop: verticalScale(10),
+    fontSize: moderateScale(18),
+    color: "#7098C7",
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  emptyScheduleText: {
+    marginTop: verticalScale(8),
+    fontSize: moderateScale(13),
+    lineHeight: moderateScale(20),
+    color: "#7C90AA",
+    textAlign: "center",
   },
 
   timelineRow: {
@@ -1896,6 +3171,38 @@ const styles = StyleSheet.create({
   dotWrapDone: {
     backgroundColor: "#8DBCF1",
     borderColor: "#8DBCF1",
+  },
+
+  dotWrapUpcoming: {
+    backgroundColor: "#5A6470",
+  },
+
+  upcomingDotPulseWrap: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 4,
+  },
+
+  upcomingDotPulse: {
+    position: "absolute",
+    width: moderateScale(14),
+    height: moderateScale(14),
+    borderRadius: moderateScale(7),
+    backgroundColor: "rgba(115,173,240,0.42)",
+  },
+
+  upcomingDotCore: {
+    width: moderateScale(8),
+    height: moderateScale(8),
+    borderRadius: moderateScale(4),
+    backgroundColor: "#73ADF0",
+  },
+
+  upcomingDotCoreSelected: {
+    width: moderateScale(7),
+    height: moderateScale(7),
+    borderRadius: moderateScale(3.5),
   },
 
   innerDot: {
@@ -1993,8 +3300,24 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  deleteInlineButton: {
-    marginLeft: scale(2),
+  inlineEditDeleteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(6),
+  },
+
+  editActionButton: {
+    width: moderateScale(28),
+    height: moderateScale(28),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  deleteActionButton: {
+    width: moderateScale(28),
+    height: moderateScale(28),
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   focusCardRow: {
@@ -2026,13 +3349,32 @@ const styles = StyleSheet.create({
     borderRightColor: "#BFD9FA",
   },
 
+  completeFillOverlayBubble: {
+    position: "absolute",
+    right: scale(6),
+    bottom: verticalScale(6),
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(21),
+    backgroundColor: "#8DBCF1",
+    zIndex: 0,
+  },
+
+  completeFillOverlayBubbleLarge: {
+    right: scale(16),
+    bottom: verticalScale(14),
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
+  },
+
   focusCard: {
     flex: 1,
     backgroundColor: "#F6F6F6",
     borderRadius: moderateScale(16),
     borderWidth: 1,
     borderColor: "#B2B2B2",
-    overflow: "hidden",
+    overflow: "visible",
     position: "relative",
   },
 
@@ -2041,12 +3383,26 @@ const styles = StyleSheet.create({
     borderColor: "#A9CCF6",
   },
 
+  editDeleteFloatingRow: {
+    position: "absolute",
+    top: verticalScale(-40),
+    right: scale(10),
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(8),
+    zIndex: 8,
+  },
+
+
   focusHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderBottomWidth: 1,
     borderBottomColor: "#C8C8C8",
+    borderTopLeftRadius: moderateScale(16),
+    borderTopRightRadius: moderateScale(16),
+    overflow: "hidden",
   },
 
   focusHeaderRowComplete: {
@@ -2055,12 +3411,13 @@ const styles = StyleSheet.create({
   },
 
   nextEventPill: {
+    // Manually adjust the blue Next/Future event pill horizontal position here.
     backgroundColor: "#89B9ED",
     paddingHorizontal: scale(18),
     paddingVertical: verticalScale(12),
-    borderTopRightRadius: moderateScale(16),
-    borderBottomRightRadius: moderateScale(16),
+    borderRadius: moderateScale(16),
     maxWidth: "60%",
+    marginLeft: scale(-10),
   },
 
   nextEventPillComplete: {
@@ -2141,19 +3498,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-  },
-
-  deleteBadgeFloating: {
-    position: "absolute",
-    top: verticalScale(10),
-    right: scale(10),
-    width: moderateScale(24),
-    height: moderateScale(24),
-    borderRadius: moderateScale(12),
-    backgroundColor: "#E35D5B",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 5,
   },
 
   stripMetaRow: {
@@ -2314,6 +3658,199 @@ const styles = StyleSheet.create({
     color: colors.errorDark,
   },
 
+
+  calendarAgendaWrap: {
+    paddingHorizontal: scale(10),
+    paddingTop: verticalScale(8),
+    paddingBottom: verticalScale(10),
+  },
+
+  calendarSectionWrap: {
+    marginBottom: verticalScale(12),
+  },
+
+  calendarSectionHeader: {
+    minHeight: verticalScale(48),
+    borderRadius: moderateScale(18),
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(8),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: verticalScale(8),
+  },
+
+  calendarSectionHeaderText: {
+    color: "#FFFFFF",
+    fontSize: moderateScale(22),
+    fontWeight: "900",
+    textShadowColor: "rgba(0,0,0,0.14)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
+
+  calendarSectionHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(6),
+  },
+
+  calendarSectionCountText: {
+    color: "#FFFFFF",
+    fontSize: moderateScale(14),
+    fontWeight: "800",
+  },
+
+  calendarItemWrap: {
+    paddingTop: verticalScale(20),
+    marginBottom: verticalScale(13),
+  },
+
+  calendarItemWrapEditMode: {},
+
+  calendarItemActions: {
+    position: "absolute",
+    top: verticalScale(-11),
+    right: scale(12),
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(8),
+    zIndex: 3,
+  },
+
+  calendarEventCard: {
+    borderWidth: 1.5,
+    borderRadius: moderateScale(16),
+    overflow: "hidden",
+  },
+
+  calendarEventCardExpanded: {
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+
+  calendarEventTopRow: {
+    minHeight: verticalScale(50),
+    flexDirection: "row",
+    alignItems: "stretch",
+    borderBottomWidth: 1,
+  },
+
+  calendarTitleCell: {
+    flex: 1.35,
+    justifyContent: "center",
+    paddingLeft: scale(12),
+    paddingRight: scale(8),
+    borderRightWidth: 1.5,
+    overflow: "hidden",
+  },
+
+  calendarTitleCellWide: {
+    flex: 1.62,
+    paddingRight: scale(6),
+  },
+
+  calendarNameCell: {
+    width: scale(108),
+    justifyContent: "center",
+    paddingLeft: scale(8),
+    paddingRight: scale(6),
+    borderRightWidth: 1.5,
+    overflow: "hidden",
+  },
+
+  calendarNameCellCompact: {
+    width: scale(94),
+    paddingLeft: scale(7),
+    paddingRight: scale(5),
+  },
+
+  calendarTimeCell: {
+    width: scale(100),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: scale(3),
+    paddingLeft: scale(1),
+    paddingRight: scale(1),
+  },
+
+  calendarTimeText: {
+    color: "#6D6D6D",
+    fontSize: moderateScale(13),
+    fontWeight: "500",
+  },
+
+  calendarTimeTextCompleted: {
+    color: "#FFFFFF",
+  },
+
+  calendarChevronCell: {
+    width: scale(28),
+    alignItems: "center",
+    justifyContent: "center",
+    paddingRight: scale(0),
+  },
+
+  calendarExpandedBody: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: scale(10),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(10),
+  },
+
+  calendarDescriptionText: {
+    flex: 1,
+    color: "#5A5A5A",
+    fontSize: moderateScale(13),
+    lineHeight: moderateScale(19),
+    paddingRight: scale(6),
+  },
+
+  calendarDescriptionTextCompleted: {
+    color: "#FFFFFF",
+  },
+
+  calendarCompleteButton: {
+    width: moderateScale(54),
+    height: moderateScale(54),
+    borderRadius: moderateScale(27),
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+
+  calendarCompleteButtonDone: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+  },
+
+  fadeTextWrap: {
+    overflow: "hidden",
+    position: "relative",
+    justifyContent: "center",
+  },
+
+  fadeTextOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: scale(26),
+  },
+
+  fadeTextOverlayLeft: {
+    left: 0,
+  },
+
+  fadeTextOverlayRight: {
+    right: 0,
+  },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.36)",
@@ -2417,34 +3954,30 @@ const styles = StyleSheet.create({
   modalChipRow: {
     flexDirection: "row",
     alignItems: "center",
-  },
-
-  modalChipWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    gap: scale(8),
   },
 
   modalBabyChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#EEF5FC",
-    borderWidth: 1,
-    borderColor: "#BFD2E6",
-    borderRadius: moderateScale(18),
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(20),
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    backgroundColor: "#FFFFFF",
     marginRight: scale(8),
   },
 
   modalBabyChipActive: {
-    backgroundColor: "#8DBCF1",
-    borderColor: "#8DBCF1",
+    backgroundColor: "#7FB2EF",
+    borderColor: "#7FB2EF",
   },
 
   modalBabyChipText: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(12),
+    color: "#5F6E7E",
     fontWeight: "700",
-    color: "#5F8FC8",
   },
 
   modalBabyChipTextActive: {
@@ -2452,12 +3985,12 @@ const styles = StyleSheet.create({
   },
 
   modalTypeChip: {
-    backgroundColor: "#F2F6FA",
-    borderWidth: 1,
-    borderColor: "#C3D1DE",
-    borderRadius: moderateScale(18),
     paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(7),
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(18),
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
     marginRight: scale(8),
     marginBottom: verticalScale(8),
   },
@@ -2471,118 +4004,122 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     fontWeight: "700",
     color: "#5F6E7E",
-    textTransform: "capitalize",
   },
 
   modalTypeChipTextActive: {
     color: "#FFFFFF",
   },
 
-  modalInput: {
-    minHeight: verticalScale(46),
-    borderRadius: moderateScale(12),
-    borderWidth: 1,
-    borderColor: "#C8D3DD",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: scale(12),
-    fontSize: moderateScale(14),
-    color: "#444444",
-  },
-
-  modalInputMultiline: {
-    minHeight: verticalScale(96),
-    paddingTop: verticalScale(12),
-    textAlignVertical: "top",
+  modalChipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
 
   modalDtRow: {
     flexDirection: "row",
-    gap: scale(8),
+    alignItems: "center",
+    gap: scale(10),
+    flexWrap: "wrap",
   },
 
   modalDtBtn: {
-    flex: 1,
-    minHeight: verticalScale(44),
-    borderRadius: moderateScale(12),
-    borderWidth: 1,
-    borderColor: "#BDD0E3",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: scale(10),
     flexDirection: "row",
     alignItems: "center",
+    gap: scale(8),
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    borderRadius: moderateScale(14),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(10),
   },
 
   modalDtBtnText: {
-    marginLeft: scale(6),
     fontSize: moderateScale(12),
-    fontWeight: "700",
     color: "#5F6E7E",
-    flexShrink: 1,
+    fontWeight: "700",
   },
 
   endTimeHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: verticalScale(6),
+    gap: scale(12),
   },
 
   clearBtn: {
-    borderWidth: 1.5,
-    borderColor: "#ddd",
-    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5B6B2",
+    borderRadius: moderateScale(14),
     paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(3),
+    paddingVertical: verticalScale(6),
+    backgroundColor: "#FFF",
   },
 
   clearBtnText: {
+    color: "#D66A61",
+    fontWeight: "700",
     fontSize: moderateScale(11),
-    color: "#aaa",
-    fontWeight: "600",
+  },
+
+  modalInput: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    borderRadius: moderateScale(14),
+    paddingHorizontal: scale(12),
+    paddingVertical: verticalScale(10),
+    fontSize: moderateScale(13),
+    color: "#465463",
+  },
+
+  modalInputMultiline: {
+    minHeight: verticalScale(96),
+    textAlignVertical: "top",
   },
 
   modalFooter: {
     flexDirection: "row",
-    gap: scale(10),
+    alignItems: "center",
+    gap: scale(12),
     paddingHorizontal: scale(14),
-    paddingTop: verticalScale(8),
-    paddingBottom: verticalScale(18),
+    paddingTop: verticalScale(10),
     backgroundColor: "#EEF4F8",
   },
 
   modalCancelBtn: {
     flex: 1,
-    minHeight: verticalScale(50),
-    borderRadius: moderateScale(16),
-    backgroundColor: "#E6EBF0",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#C8D3DD",
+    borderRadius: moderateScale(18),
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: verticalScale(13),
   },
 
   modalCancelBtnText: {
-    fontSize: moderateScale(14),
+    color: "#5F6E7E",
     fontWeight: "800",
-    color: "#66717C",
+    fontSize: moderateScale(13),
   },
 
   modalSaveBtn: {
-    flex: 1.35,
-    minHeight: verticalScale(50),
-    borderRadius: moderateScale(16),
+    flex: 1.2,
     backgroundColor: "#8DBCF1",
-    flexDirection: "row",
+    borderRadius: moderateScale(18),
     alignItems: "center",
     justifyContent: "center",
-    gap: scale(8),
+    paddingVertical: verticalScale(13),
   },
 
   modalSaveBtnDisabled: {
-    backgroundColor: "#B8C7D6",
+    opacity: 0.6,
   },
 
   modalSaveBtnText: {
-    fontSize: moderateScale(14),
-    fontWeight: "900",
     color: "#FFFFFF",
+    fontWeight: "900",
+    fontSize: moderateScale(13),
   },
 });
