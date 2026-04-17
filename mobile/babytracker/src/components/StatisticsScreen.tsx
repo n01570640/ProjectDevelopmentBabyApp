@@ -109,7 +109,31 @@ const transformDbDataToChartData = (dbData: any): Record<MetricType, MetricChart
   };
 };
 
+const dummyChartData: Record<MetricType, MetricChartData> = {
+  weight: makeChartData(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+    [3.2, 3.6, 3.9, 4.3, 4.8, 5.2],
+    (opacity) => `rgba(255, 107, 107, ${opacity})`
+  ),
+  height: makeChartData(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+    [50, 52, 54, 56, 58, 60],
+    (opacity) => `rgba(74, 144, 226, ${opacity})`
+  ),
+};
+
 const getChartDataForMetric = (metric: MetricType, data: MetricChartData) => data;
+
+const computeChartStats = (chartData: MetricChartData) => {
+  const values = chartData.datasets[0].data;
+  const hasData = values.length > 0 && chartData.labels.length > 0;
+  const latest = hasData ? values[values.length - 1] : 0;
+  const average = hasData ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const change = hasData ? latest - values[0] : 0;
+  const color = hasData && latest >= values[0] ? "#4CAF50" : "#F44336";
+
+  return { latest, average, change, color };
+};
 
 export default function StatisticsScreen() {
   const insets = useSafeAreaInsets();
@@ -444,6 +468,132 @@ export default function StatisticsScreen() {
               >
                 {changeChartValue >= 0 ? "+" : ""}
                 {changeChartValue.toFixed(1)}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Dummy Weight Chart */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>Weight (kg) - Dummy</Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chartScrollContainer}
+          >
+            <LineChart
+              data={dummyChartData.weight}
+              width={Math.max(width - scale(24), dummyChartData.weight.labels.length * scale(70))}
+              height={verticalScale(200)}
+              chartConfig={{
+                backgroundColor: "#ffffff",
+                backgroundGradientFrom: "#ffffff",
+                backgroundGradientTo: "#ffffff",
+                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                strokeWidth: 2,
+                propsForLabels: {
+                  fontSize: 11,
+                  fontFamily: "System",
+                },
+              }}
+              style={styles.chart}
+              bezier
+              withDots={true}
+              withInnerLines={true}
+              withOuterLines={true}
+              withVerticalLabels={true}
+              withHorizontalLabels={true}
+            />
+          </ScrollView>
+
+          <View style={styles.chartStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Latest</Text>
+              <Text style={styles.statValue}>
+                {computeChartStats(dummyChartData.weight).latest.toFixed(1)} kg
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Average</Text>
+              <Text style={styles.statValue}>
+                {computeChartStats(dummyChartData.weight).average.toFixed(1)} kg
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Change</Text>
+              <Text
+                style={[
+                  styles.statValue,
+                  { color: computeChartStats(dummyChartData.weight).color },
+                ]}
+              >
+                {computeChartStats(dummyChartData.weight).change >= 0 ? "+" : ""}
+                {computeChartStats(dummyChartData.weight).change.toFixed(1)}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Dummy Height Chart */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>Height (cm) - Dummy</Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chartScrollContainer}
+          >
+            <LineChart
+              data={dummyChartData.height}
+              width={Math.max(width - scale(24), dummyChartData.height.labels.length * scale(70))}
+              height={verticalScale(200)}
+              chartConfig={{
+                backgroundColor: "#ffffff",
+                backgroundGradientFrom: "#ffffff",
+                backgroundGradientTo: "#ffffff",
+                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                strokeWidth: 2,
+                propsForLabels: {
+                  fontSize: 11,
+                  fontFamily: "System",
+                },
+              }}
+              style={styles.chart}
+              bezier
+              withDots={true}
+              withInnerLines={true}
+              withOuterLines={true}
+              withVerticalLabels={true}
+              withHorizontalLabels={true}
+            />
+          </ScrollView>
+
+          <View style={styles.chartStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Latest</Text>
+              <Text style={styles.statValue}>
+                {computeChartStats(dummyChartData.height).latest.toFixed(1)} cm
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Average</Text>
+              <Text style={styles.statValue}>
+                {computeChartStats(dummyChartData.height).average.toFixed(1)} cm
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Change</Text>
+              <Text
+                style={[
+                  styles.statValue,
+                  { color: computeChartStats(dummyChartData.height).color },
+                ]}
+              >
+                {computeChartStats(dummyChartData.height).change >= 0 ? "+" : ""}
+                {computeChartStats(dummyChartData.height).change.toFixed(1)}
               </Text>
             </View>
           </View>
