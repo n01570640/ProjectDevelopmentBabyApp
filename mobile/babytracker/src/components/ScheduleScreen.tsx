@@ -657,8 +657,8 @@ export default function ScheduleScreen({ navigation }: Props) {
 
       const newDate =
         modalType === "activity"
-          ? form.startTime.toISOString().slice(0, 10)
-          : form.dueAt.toISOString().slice(0, 10);
+          ? `${form.startTime.getFullYear()}-${pad2(form.startTime.getMonth() + 1)}-${pad2(form.startTime.getDate())}`
+          : `${form.dueAt.getFullYear()}-${pad2(form.dueAt.getMonth() + 1)}-${pad2(form.dueAt.getDate())}`;
 
       setSelectedDate(newDate);
     } catch (e: any) {
