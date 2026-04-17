@@ -13,6 +13,11 @@ import {
   Pressable,
   Modal,
   Alert,
+  Animated,
+  Easing,
+  Platform,
+  UIManager,
+  LayoutAnimation,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,7 +34,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import { scale, verticalScale, moderateScale } from "../utils/responsive";
 import { colors } from "../theme/colors";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Props = {
   navigation: any;
@@ -169,6 +178,13 @@ export default function Children({ navigation, route }: Props) {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [childDeleting, setChildDeleting] = useState(false);
+  const [showCardShadows, setShowCardShadows] = useState(true);
+
+  const layoutSwitchAnim = useRef(new Animated.Value(1)).current;
+  const layoutIconAnim = useRef(new Animated.Value(0)).current;
+  const layoutTransitionRef = useRef(false);
+  const bottomSheetAnim = useRef(new Animated.Value(0)).current;
+  const [bottomSheetBaby, setBottomSheetBaby] = useState<BabyProfile | null>(null);
 
   const loadBabyPhotos = useCallback(() => {
     if (!babies || babies.length === 0) return;
@@ -225,10 +241,111 @@ export default function Children({ navigation, route }: Props) {
       ? filteredBabies.find((baby: BabyProfile) => baby.baby_id === selectedGridBabyId) ?? null
       : null;
 
-  const cycleLayout = () => {
-    setSelectedGridBabyId(null);
-    setLayoutMode((prev) => (prev === 1 ? 2 : prev === 2 ? 4 : 1));
+  const handleCompactSelect = (babyId: number) => {
+    LayoutAnimation.configureNext({
+      duration: 250,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+    setSelectedGridBabyId((prev) => (prev === babyId ? null : babyId));
   };
+
+  const cycleLayout = () => {
+    if (layoutTransitionRef.current) return;
+    layoutTransitionRef.current = true;
+    setSelectedGridBabyId(null);
+    setShowCardShadows(false);
+
+    Animated.parallel([
+      Animated.timing(layoutSwitchAnim, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(layoutIconAnim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      LayoutAnimation.configureNext({
+        duration: 260,
+        create: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+        update: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+        },
+        delete: {
+          type: LayoutAnimation.Types.easeInEaseOut,
+          property: LayoutAnimation.Properties.opacity,
+        },
+      });
+
+      setLayoutMode((prev) => (prev === 1 ? 2 : prev === 2 ? 4 : 1));
+
+      requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(layoutSwitchAnim, {
+            toValue: 1,
+            duration: 260,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(layoutIconAnim, {
+            toValue: 0,
+            duration: 260,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          layoutTransitionRef.current = false;
+        });
+        setShowCardShadows(true);
+      });
+    });
+  };
+
+  useEffect(() => {
+    if (layoutMode !== 4) {
+      Animated.timing(bottomSheetAnim, {
+        toValue: 0,
+        duration: 250,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => setBottomSheetBaby(null));
+      return;
+    }
+
+    if (selectedGridBaby) {
+      setBottomSheetBaby(selectedGridBaby);
+      Animated.timing(bottomSheetAnim, {
+        toValue: 1,
+        duration: 250,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(bottomSheetAnim, {
+        toValue: 0,
+        duration: 250,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => setBottomSheetBaby(null));
+    }
+  }, [selectedGridBaby, layoutMode, bottomSheetAnim]);
 
   const getCardWidth = () => {
     const gap = scale(12);
@@ -512,10 +629,14 @@ export default function Children({ navigation, route }: Props) {
     }
   };
 
+  const cardShadowStyle = showCardShadows ? styles.cardShadow : styles.cardShadowOff;
+  const twoUpShadowStyle = showCardShadows ? styles.twoUpCardShadow : styles.cardShadowOff;
+  const compactShadowStyle = showCardShadows ? styles.compactCardShadow : styles.cardShadowOff;
+
   const renderLargeCard = (baby: BabyProfile) => {
     const photoUri = babyPhotos[baby.baby_id];
     return (
-      <View key={baby.baby_id} style={styles.card}>
+      <Animated.View key={baby.baby_id} style={[styles.card, cardShadowStyle]}>
         <View style={styles.cardTopAccent} />
 
         <Image
@@ -606,7 +727,7 @@ export default function Children({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -616,10 +737,11 @@ export default function Children({ navigation, route }: Props) {
     const isEndOfRow = index % 2 === 1;
 
     return (
-      <View
+      <Animated.View
         key={baby.baby_id}
         style={[
           styles.twoUpCard,
+          twoUpShadowStyle,
           { width: cardWidth as number, marginRight: isEndOfRow ? 0 : scale(12) },
         ]}
       >
@@ -681,7 +803,7 @@ export default function Children({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -692,16 +814,20 @@ export default function Children({ navigation, route }: Props) {
     const isEndOfRow = index % 4 === 3;
 
     return (
-      <TouchableOpacity
+      <Animated.View
         key={baby.baby_id}
-        activeOpacity={0.9}
         style={[
           styles.compactCard,
+          compactShadowStyle,
           { width: cardWidth as number, marginRight: isEndOfRow ? 0 : scale(12) },
           isSelected && styles.compactCardSelected,
         ]}
+      >
+      <TouchableOpacity
+        activeOpacity={0.9}
+        style={styles.compactTouchableFill}
         onPress={() =>
-          setSelectedGridBabyId((prev) => (prev === baby.baby_id ? null : baby.baby_id))
+          handleCompactSelect(baby.baby_id)
         }
       >
         <View style={[styles.compactAccent, isSelected && styles.compactAccentSelected]} />
@@ -732,16 +858,63 @@ export default function Children({ navigation, route }: Props) {
           </View>
         </View>
       </TouchableOpacity>
+      </Animated.View>
     );
+  };
+
+  const layoutContentAnimatedStyle = {
+    opacity: layoutSwitchAnim,
+    transform: [
+      {
+        translateY: layoutSwitchAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [verticalScale(10), 0],
+        }),
+      },
+      {
+        scale: layoutSwitchAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.985, 1],
+        }),
+      },
+    ],
+  };
+
+  const layoutIconAnimatedStyle = {
+    transform: [
+      {
+        rotate: layoutIconAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: ["0deg", "90deg"],
+        }),
+      },
+      {
+        scale: layoutIconAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 0.92],
+        }),
+      },
+    ],
+    opacity: layoutIconAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 0.8],
+    }),
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.heroWrap}>
         <View style={[styles.heroInner, { paddingTop: insets.top + verticalScale(12) }]}>
-          <View style={styles.heroTextWrap}>
-            <Text style={styles.heroTitle}>Children</Text>
-            <Text style={styles.heroSubtitle}>Profiles, quick info, and caregiver details</Text>
+          <View style={styles.heroHeaderRow}>
+            <View style={styles.heroTextWrap}>
+              <Text style={styles.heroTitle}>Children</Text>
+              <Text style={styles.heroSubtitle}>Profiles, quick info, and caregiver details</Text>
+            </View>
+
+            <TouchableOpacity style={styles.heroAddButton} activeOpacity={0.9} onPress={openAddChildModal}>
+              <Ionicons name="add" size={moderateScale(18)} color="#ffffff" />
+              <Text style={styles.heroAddButtonText}>Add Baby</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -766,11 +939,13 @@ export default function Children({ navigation, route }: Props) {
             </View>
 
             <TouchableOpacity style={styles.menuButton} activeOpacity={0.85} onPress={cycleLayout}>
-              <Ionicons
-                name={getLayoutIcon(layoutMode) as any}
-                size={moderateScale(24)}
-                color="#4f6175"
-              />
+              <Animated.View style={layoutIconAnimatedStyle}>
+                <Ionicons
+                  name={getLayoutIcon(layoutMode) as any}
+                  size={moderateScale(24)}
+                  color="#4f6175"
+                />
+              </Animated.View>
             </TouchableOpacity>
           </View>
 
@@ -782,91 +957,102 @@ export default function Children({ navigation, route }: Props) {
             </View>
           )}
 
-          {loading && (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading children...</Text>
-            </View>
-          )}
+          <Animated.View style={[styles.layoutAnimatedWrap, layoutContentAnimatedStyle]}>
+            {loading && (
+              <View style={styles.centerContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.loadingText}>Loading children...</Text>
+              </View>
+            )}
 
-          {!loading && error && (
-            <View style={styles.centerContainer}>
-              <Ionicons name="alert-circle-outline" size={48} color={colors.errorBorder} />
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={() => dispatch(fetchBabies())}>
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+            {!loading && error && (
+              <View style={styles.centerContainer}>
+                <Ionicons name="alert-circle-outline" size={48} color={colors.errorBorder} />
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={() => dispatch(fetchBabies())}>
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-          {!loading && !error && babies.length === 0 && (
-            <View style={styles.centerContainer}>
-              <Ionicons name="people-outline" size={48} color="#b2b8c3" />
-              <Text style={styles.emptyText}>No children added yet</Text>
-              <Text style={styles.emptySubtext}>Tap the + button to add your first child</Text>
-            </View>
-          )}
+            {!loading && !error && babies.length === 0 && (
+              <View style={styles.centerContainer}>
+                <Ionicons name="people-outline" size={48} color="#b2b8c3" />
+                <Text style={styles.emptyText}>No children added yet</Text>
+                <Text style={styles.emptySubtext}>Tap the + button to add your first child</Text>
+              </View>
+            )}
 
-          {!loading && !error && babies.length > 0 && filteredBabies.length === 0 && (
-            <View style={styles.centerContainer}>
-              <Ionicons name="search-outline" size={48} color="#b2b8c3" />
-              <Text style={styles.emptyText}>No matches found</Text>
-              <Text style={styles.emptySubtext}>Try searching a different child name</Text>
-            </View>
-          )}
+            {!loading && !error && babies.length > 0 && filteredBabies.length === 0 && (
+              <View style={styles.centerContainer}>
+                <Ionicons name="search-outline" size={48} color="#b2b8c3" />
+                <Text style={styles.emptyText}>No matches found</Text>
+                <Text style={styles.emptySubtext}>Try searching a different child name</Text>
+              </View>
+            )}
 
-          {!loading && !error && filteredBabies.length > 0 && (
-            <ScrollView
-              contentContainerStyle={[
-                styles.scrollContent,
-                layoutMode !== 1 && styles.gridScrollContent,
-              ]}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {layoutMode === 1 &&
-                filteredBabies.map((baby: BabyProfile) => renderLargeCard(baby))}
+            {!loading && !error && filteredBabies.length > 0 && (
+              <ScrollView
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  layoutMode !== 1 && styles.gridScrollContent,
+                ]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {layoutMode === 1 &&
+                  filteredBabies.map((baby: BabyProfile) => renderLargeCard(baby))}
 
-              {layoutMode === 2 && (
-                <View style={styles.gridWrap}>
-                  {filteredBabies.map((baby: BabyProfile, index: number) => renderTwoUpCard(baby, index))}
-                </View>
-              )}
+                {layoutMode === 2 && (
+                  <View style={styles.gridWrap}>
+                    {filteredBabies.map((baby: BabyProfile, index: number) => renderTwoUpCard(baby, index))}
+                  </View>
+                )}
 
-              {layoutMode === 4 && (
-                <View style={styles.gridWrap}>
-                  {filteredBabies.map((baby: BabyProfile, index: number) => renderCompactCard(baby, index))}
-                </View>
-              )}
+                {layoutMode === 4 && (
+                  <View style={styles.gridWrap}>
+                    {filteredBabies.map((baby: BabyProfile, index: number) => renderCompactCard(baby, index))}
+                  </View>
+                )}
 
-              <View style={{ height: layoutMode === 4 ? verticalScale(250) : verticalScale(90) }} />
-            </ScrollView>
-          )}
+                <View style={{ height: layoutMode === 4 ? verticalScale(250) : verticalScale(90) }} />
+              </ScrollView>
+            )}
 
-          {layoutMode === 4 && selectedGridBaby && (
-            <Pressable
-              style={styles.dismissOverlay}
-              onPress={() => setSelectedGridBabyId(null)}
-            />
-          )}
-
-          {layoutMode === 4 && selectedGridBaby && (
-            <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + verticalScale(72) }]}>
-              <View style={styles.bottomSheetHandle} />
+            {layoutMode === 4 && bottomSheetBaby && (
+              <Animated.View
+                style={[
+                  styles.bottomSheet,
+                  {
+                    paddingBottom: insets.bottom + verticalScale(72),
+                    opacity: bottomSheetAnim,
+                    transform: [
+                      {
+                        translateY: bottomSheetAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [verticalScale(220), 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+                pointerEvents={bottomSheetAnim ? "auto" : "none"}
+              >
+                <View style={styles.bottomSheetHandle} />
 
               <View style={styles.bottomSheetHeader}>
                 <View>
-                  <Text style={styles.bottomSheetTitle}>{selectedGridBaby.display_name}</Text>
+                  <Text style={styles.bottomSheetTitle}>{bottomSheetBaby.display_name}</Text>
                   <Text style={styles.bottomSheetSubtitle}>
-                    {getAgeLabel(selectedGridBaby.date_of_birth)}
+                    {getAgeLabel(bottomSheetBaby.date_of_birth)}
                   </Text>
                 </View>
 
-                {selectedGridBaby.sex && (
+                {bottomSheetBaby.sex && (
                   <View style={styles.bottomSheetSexPill}>
                     <Ionicons
                       name={
-                        selectedGridBaby.sex === "male"
+                        bottomSheetBaby.sex === "male"
                           ? "male-outline"
                           : "female-outline"
                       }
@@ -874,7 +1060,7 @@ export default function Children({ navigation, route }: Props) {
                       color="#4F8DD4"
                     />
                     <Text style={styles.bottomSheetSexText}>
-                      {selectedGridBaby.sex === "male" ? "Male" : "Female"}
+                      {bottomSheetBaby.sex === "male" ? "Male" : "Female"}
                     </Text>
                   </View>
                 )}
@@ -884,8 +1070,8 @@ export default function Children({ navigation, route }: Props) {
                 <View style={styles.bottomInfoCard}>
                   <Text style={styles.bottomInfoLabel}>Height</Text>
                   <Text style={styles.bottomInfoValue}>
-                    {selectedGridBaby.latest_growth?.length_cm
-                      ? `${selectedGridBaby.latest_growth.length_cm} cm`
+                    {bottomSheetBaby.latest_growth?.length_cm
+                      ? `${bottomSheetBaby.latest_growth.length_cm} cm`
                       : "Not recorded"}
                   </Text>
                 </View>
@@ -893,8 +1079,8 @@ export default function Children({ navigation, route }: Props) {
                 <View style={styles.bottomInfoCard}>
                   <Text style={styles.bottomInfoLabel}>Weight</Text>
                   <Text style={styles.bottomInfoValue}>
-                    {selectedGridBaby.latest_growth?.weight_kg
-                      ? `${selectedGridBaby.latest_growth.weight_kg} kg`
+                    {bottomSheetBaby.latest_growth?.weight_kg
+                      ? `${bottomSheetBaby.latest_growth.weight_kg} kg`
                       : "Not recorded"}
                   </Text>
                 </View>
@@ -903,7 +1089,7 @@ export default function Children({ navigation, route }: Props) {
               <View style={styles.bottomGuardianCard}>
                 <Text style={styles.bottomInfoLabel}>Guardian</Text>
                 <Text style={styles.bottomInfoValue}>
-                  {selectedGridBaby.primary_caregiver_name || "Not assigned"}
+                  {bottomSheetBaby.primary_caregiver_name || "Not assigned"}
                 </Text>
               </View>
 
@@ -913,7 +1099,7 @@ export default function Children({ navigation, route }: Props) {
                   style={styles.bottomViewButton}
                   onPress={() =>
                     navigation.navigate("BabyDetail", {
-                      babyId: selectedGridBaby.baby_id,
+                      babyId: bottomSheetBaby.baby_id,
                     })
                   }
                 >
@@ -923,7 +1109,7 @@ export default function Children({ navigation, route }: Props) {
                 <TouchableOpacity
                   style={styles.bottomEditButton}
                   activeOpacity={0.85}
-                  onPress={() => openEditChildModal(selectedGridBaby)}
+                  onPress={() => openEditChildModal(bottomSheetBaby)}
                 >
                   <Ionicons
                     name="settings-outline"
@@ -934,18 +1120,10 @@ export default function Children({ navigation, route }: Props) {
                   <Text style={styles.bottomEditText}>Edit</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           )}
 
-          <TouchableOpacity
-            style={[styles.fab, { bottom: insets.bottom + verticalScale(90) }]}
-            activeOpacity={0.9}
-            onPress={openAddChildModal}
-          >
-            <View style={styles.fabInner}>
-              <Ionicons name="add" size={moderateScale(30)} color="#ffffff" />
-            </View>
-          </TouchableOpacity>
+          </Animated.View>
         </View>
       </View>
 
@@ -976,6 +1154,7 @@ export default function Children({ navigation, route }: Props) {
       <Modal
         visible={deleteConfirmVisible}
         transparent
+        statusBarTranslucent
         animationType="fade"
         onRequestClose={closeDeleteConfirm}
       >
@@ -1094,11 +1273,36 @@ function ChildEditModal({
       : "Update child information and photo";
 
   const shownPhoto = form.localPhotoUri || form.uploadedPhotoUri;
+  const backdropAnim = useRef(new Animated.Value(0)).current;
+  const sheetAnim = useRef(new Animated.Value(48)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      backdropAnim.setValue(0);
+      sheetAnim.setValue(48);
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(backdropAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetAnim, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [visible, backdropAnim, sheetAnim]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+      <Animated.View style={[styles.modalBackdrop, { opacity: backdropAnim }]}>
+        <Animated.View style={[styles.modalCard, { transform: [{ translateY: sheetAnim }] }]}>
           <LinearGradient
             colors={["#8DBCF1", "#79ADDF"]}
             start={{ x: 0, y: 0 }}
@@ -1298,8 +1502,8 @@ function ChildEditModal({
               )}
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -1321,8 +1525,32 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(18),
   },
 
+  heroHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: scale(12),
+  },
+
   heroTextWrap: {
+    flex: 1,
     paddingRight: scale(12),
+  },
+
+  heroAddButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(6),
+    backgroundColor: "#5F97D5",
+    borderRadius: moderateScale(18),
+    paddingHorizontal: scale(14),
+    paddingVertical: verticalScale(10),
+  },
+
+  heroAddButtonText: {
+    fontSize: moderateScale(13),
+    color: "#FFFFFF",
+    fontWeight: "800",
   },
 
   heroTitle: {
@@ -1348,6 +1576,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: width * 0.05,
     paddingTop: verticalScale(14),
     paddingBottom: verticalScale(110),
+  },
+
+  layoutAnimatedWrap: {
+    flex: 1,
   },
 
   searchRow: {
@@ -1463,12 +1695,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: CARD_RADIUS,
     marginBottom: verticalScale(18),
+    overflow: "hidden",
+  },
+
+  cardShadow: {
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
-    overflow: "hidden",
+  },
+
+  cardShadowOff: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
 
   cardTopAccent: {
@@ -1608,12 +1849,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: moderateScale(18),
     marginBottom: verticalScale(12),
+    overflow: "hidden",
+  },
+
+  twoUpCardShadow: {
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
     elevation: 3,
-    overflow: "hidden",
   },
 
   twoUpImage: {
@@ -1711,12 +1955,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1.5,
     borderColor: "transparent",
+    minHeight: verticalScale(145),
+  },
+
+  compactCardShadow: {
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 5,
     elevation: 2,
-    minHeight: verticalScale(145),
   },
 
   compactCardSelected: {
@@ -1738,6 +1985,10 @@ const styles = StyleSheet.create({
   compactImage: {
     width: "100%",
     height: verticalScale(68),
+  },
+
+  compactTouchableFill: {
+    flex: 1,
   },
 
   compactBody: {
@@ -1784,9 +2035,9 @@ const styles = StyleSheet.create({
 
   bottomSheet: {
     position: "absolute",
-    left: scale(5),
-    right: scale(5),
-    bottom: -verticalScale(52),
+    left: width * 0.001,
+    right: width * 0.001,
+    bottom: -height * 0.06,
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: moderateScale(26),
     borderTopRightRadius: moderateScale(26),
@@ -1797,7 +2048,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 10,
     elevation: 20,
-    minHeight: verticalScale(420),
+    minHeight: height * 0.24,
     zIndex: 20,
   },
 
@@ -1918,26 +2169,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  fab: {
-    position: "absolute",
-    right: scale(20),
-    zIndex: 30,
-  },
-
-  fabInner: {
-    width: moderateScale(62),
-    height: moderateScale(62),
-    borderRadius: moderateScale(31),
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 8,
-  },
-
   feedbackSuccess: {
     backgroundColor: colors.successLight,
     borderLeftWidth: 4,
@@ -1976,6 +2207,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.38)",
     justifyContent: "flex-end",
+    paddingTop: 0,
   },
 
   modalCard: {

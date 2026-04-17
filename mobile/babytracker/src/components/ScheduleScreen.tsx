@@ -920,13 +920,14 @@ export default function ScheduleScreen({ navigation }: Props) {
 
   const toggleCalendarExpanded = (key: string) => {
     LayoutAnimation.configureNext({
-      duration: 260,
+      duration: 320,
       create: {
         type: LayoutAnimation.Types.easeInEaseOut,
         property: LayoutAnimation.Properties.opacity,
       },
       update: {
-        type: LayoutAnimation.Types.easeInEaseOut,
+        type: LayoutAnimation.Types.spring,
+        springDamping: 0.82,
       },
       delete: {
         type: LayoutAnimation.Types.easeInEaseOut,
@@ -1166,7 +1167,13 @@ export default function ScheduleScreen({ navigation }: Props) {
       <View style={styles.modeContent}>
       <Animated.View style={[styles.sceneContentFadeLayer, { opacity: contentOpacityAnim }]}>
       <Animated.View style={[styles.modeScene, styles.calendarScene, calendarScreenAnimatedStyle]} pointerEvents={mode === "calendar" ? "auto" : "none"}>
-        <ScrollView contentContainerStyle={styles.calendarScreen} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.calendarScreen,
+            { paddingBottom: insets.bottom + verticalScale(118) },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.calendarCard}>
             <Calendar
               style={styles.calendar}
@@ -1229,6 +1236,7 @@ export default function ScheduleScreen({ navigation }: Props) {
             ref={scrollRef}
             contentContainerStyle={[
               styles.timelineScreen,
+              { paddingBottom: insets.bottom + verticalScale(122) },
               dayEvents.length === 0 && styles.timelineScreenEmpty,
             ]}
             showsVerticalScrollIndicator={false}
@@ -1296,7 +1304,7 @@ export default function ScheduleScreen({ navigation }: Props) {
               </View>
             )}
 
-            <View style={{ height: verticalScale(52) }} />
+            <View style={{ height: insets.bottom + verticalScale(72) }} />
           </ScrollView>
 
           {showTypeMenu && (
@@ -1351,6 +1359,7 @@ export default function ScheduleScreen({ navigation }: Props) {
               {showTypeMenu ? "Close" : "Add Manual Event"}
             </Text>
           </TouchableOpacity>
+
         </View>
       </Animated.View>
       </Animated.View>
@@ -1419,6 +1428,164 @@ export default function ScheduleScreen({ navigation }: Props) {
   );
 }
 
+
+function AnimatedScaleButton({
+  children,
+  onPress,
+  style,
+  activeOpacity = 0.9,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+  style?: any;
+  activeOpacity?: number;
+}) {
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  const pressIn = () => {
+    Animated.spring(pressAnim, {
+      toValue: 0.94,
+      speed: 28,
+      bounciness: 5,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const pressOut = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      speed: 24,
+      bounciness: 7,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[style, { transform: [{ scale: pressAnim }] }]}> 
+      <TouchableOpacity
+        activeOpacity={activeOpacity}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
+        onPress={onPress}
+        style={{ flex: 1 }}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function CalendarChevronIcon({
+  expanded,
+  color,
+}: {
+  expanded: boolean;
+  color: string;
+}) {
+  const rotateAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotateAnim, {
+      toValue: expanded ? 1 : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotateAnim]);
+
+  return (
+    <Animated.View
+      style={{
+        transform: [
+          {
+            rotate: rotateAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: ['0deg', '180deg'],
+            }),
+          },
+        ],
+      }}
+    >
+      <Ionicons name="chevron-down" size={moderateScale(20)} color={color} />
+    </Animated.View>
+  );
+}
+
+function CalendarExpandedBody({
+  expanded,
+  isCompleted,
+  description,
+  onToggleComplete,
+}: {
+  expanded: boolean;
+  isCompleted: boolean;
+  description: string;
+  onToggleComplete: () => void;
+}) {
+  const bodyAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(bodyAnim, {
+      toValue: expanded ? 1 : 0,
+      duration: expanded ? 260 : 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [expanded, bodyAnim]);
+
+  return (
+    <Animated.View
+      pointerEvents={expanded ? 'auto' : 'none'}
+      style={[
+        styles.calendarExpandedBodyWrap,
+        {
+          maxHeight: bodyAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, verticalScale(140)],
+          }),
+          opacity: bodyAnim,
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.calendarExpandedBody,
+          {
+            transform: [
+              {
+                translateY: bodyAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-verticalScale(8), 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <Text style={[styles.calendarDescriptionText, isCompleted && styles.calendarDescriptionTextCompleted]}>
+          {description}
+        </Text>
+
+        <AnimatedScaleButton
+          style={[
+            styles.calendarCompleteButton,
+            isCompleted && styles.calendarCompleteButtonDone,
+            { backgroundColor: isCompleted ? hexToRgba('#FFFFFF', 0.22) : '#D9D9D9' },
+          ]}
+          onPress={onToggleComplete}
+        >
+          <View style={styles.calendarCompleteButtonInner}>
+            <Ionicons
+              name="checkmark"
+              size={moderateScale(24)}
+              color={isCompleted ? '#FFFFFF' : '#111111'}
+            />
+          </View>
+        </AnimatedScaleButton>
+      </Animated.View>
+    </Animated.View>
+  );
+}
 
 function AnimatedTimelineRail() {
   const endAnim = useRef(new Animated.Value(0)).current;
@@ -1749,22 +1916,24 @@ function TimelineEventRow({
               </View>
 
               <View style={styles.focusFooterRow}>
-                <TouchableOpacity
+                <AnimatedScaleButton
                   style={[
                     styles.completeButton,
                     selectedIsCompleted && styles.completeButtonDone,
                   ]}
                   onPress={() => onToggleComplete(displayEvent)}
                 >
-                  <Text
-                    style={[
-                      styles.completeButtonText,
-                      selectedIsCompleted && styles.completeButtonTextDone,
-                    ]}
-                  >
-                    {selectedIsCompleted ? "Completed" : "Complete Task"}
-                  </Text>
-                </TouchableOpacity>
+                  <View style={styles.completeButtonInner}>
+                    <Text
+                      style={[
+                        styles.completeButtonText,
+                        selectedIsCompleted && styles.completeButtonTextDone,
+                      ]}
+                    >
+                      {selectedIsCompleted ? "Completed" : "Complete Task"}
+                    </Text>
+                  </View>
+                </AnimatedScaleButton>
 
                 <View
                   style={[
@@ -1943,8 +2112,8 @@ function FadingCellText({
     };
   }, [anim, shouldAnimate, text, distance]);
 
-  const showRightFade = text.length > 14 && (!expanded || currentShift > -distance + scale(3));
-  const showLeftFade = expanded && text.length > 14 && currentShift < -scale(3);
+  const showRightFade = text.length > 14 && !expanded;
+  const showLeftFade = false;
 
   return (
     <View style={[styles.fadeTextWrap, { width }]}>
@@ -2011,6 +2180,7 @@ function CalendarEventSection({
   editModeAnim: Animated.Value;
   showEditIcons: boolean;
 }) {
+  const completeAnims = useRef<Record<string, Animated.Value>>({}).current;
   const meta = CALENDAR_SECTION_META[type];
   const isActivity = type === "activity";
   const titleWidth = isActivity ? (width < 390 ? scale(150) : scale(180)) : (width < 390 ? scale(174) : scale(206));
@@ -2047,6 +2217,7 @@ function CalendarEventSection({
             },
           ],
         };
+        const completeAnim = completeAnims[key] || (completeAnims[key] = new Animated.Value(1));
 
         return (
           <Animated.View
@@ -2133,32 +2304,19 @@ function CalendarEventSection({
                 </View>
 
                 <View style={styles.calendarChevronCell}>
-                  <Ionicons
-                    name={expanded ? "chevron-up" : "chevron-down"}
-                    size={moderateScale(20)}
+                  <CalendarChevronIcon
+                    expanded={expanded}
                     color={isCompleted ? "#FFFFFF" : meta.border}
                   />
                 </View>
               </TouchableOpacity>
 
-              {expanded && (
-                <View style={styles.calendarExpandedBody}>
-                  <Text style={[styles.calendarDescriptionText, isCompleted && styles.calendarDescriptionTextCompleted]}>
-                    {ev.description || 'No extra description provided for this event.'}
-                  </Text>
-
-                  <TouchableOpacity
-                    style={[styles.calendarCompleteButton, isCompleted && styles.calendarCompleteButtonDone, { backgroundColor: isCompleted ? hexToRgba('#FFFFFF', 0.22) : '#D9D9D9' }]}
-                    onPress={() => onToggleComplete(ev)}
-                  >
-                    <Ionicons
-                      name="checkmark"
-                      size={moderateScale(24)}
-                      color={isCompleted ? '#FFFFFF' : '#111111'}
-                    />
-                  </TouchableOpacity>
-                </View>
-              )}
+              <CalendarExpandedBody
+                expanded={expanded}
+                isCompleted={isCompleted}
+                description={ev.description || 'No extra description provided for this event.'}
+                onToggleComplete={() => onToggleComplete(ev)}
+              />
             </View>
           </Animated.View>
         );
@@ -2790,7 +2948,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(243,243,243,0.18)",
-    zIndex: 20,
+    zIndex: 40,
   },
 
   modeScene: {
@@ -2966,9 +3124,16 @@ const styles = StyleSheet.create({
 
   completeButton: {
     backgroundColor: "#8DBCF1",
+    borderRadius: moderateScale(26),
+    minWidth: scale(128),
+  },
+
+  completeButtonInner: {
     paddingHorizontal: scale(18),
     paddingVertical: verticalScale(12),
     borderRadius: moderateScale(26),
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   completeButtonDone: {
@@ -3795,13 +3960,18 @@ const styles = StyleSheet.create({
     paddingRight: scale(0),
   },
 
+  calendarExpandedBodyWrap: {
+    overflow: "hidden",
+  },
+
   calendarExpandedBody: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: scale(10),
     paddingHorizontal: scale(12),
-    paddingVertical: verticalScale(10),
+    paddingTop: verticalScale(6),
+    paddingBottom: verticalScale(10),
   },
 
   calendarDescriptionText: {
@@ -3820,9 +3990,14 @@ const styles = StyleSheet.create({
     width: moderateScale(54),
     height: moderateScale(54),
     borderRadius: moderateScale(27),
+    flexShrink: 0,
+  },
+
+  calendarCompleteButtonInner: {
+    flex: 1,
+    borderRadius: moderateScale(27),
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
   },
 
   calendarCompleteButtonDone: {

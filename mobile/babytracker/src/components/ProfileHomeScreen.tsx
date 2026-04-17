@@ -5,12 +5,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Switch,
   Modal,
   TextInput,
   Image,
   ActivityIndicator,
   Alert,
+  SafeAreaView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -25,15 +25,12 @@ import { logoutUser } from "../../services/authService";
 
 export default function ProfileHomeScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [editVisible, setEditVisible] = useState(false);
 
-  // ── Profile photo state ──────────────────────────────────
   const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
 
-  // ── Real user data from backend ──────────────────────────
   const [userLoading, setUserLoading] = useState(false);
   const [profile, setProfile] = useState({
     firstLineName: "",
@@ -60,7 +57,6 @@ export default function ProfileHomeScreen({ navigation }: any) {
 
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // ── Fetch real user profile on mount ─────────────────────
   const fetchUserProfile = useCallback(async () => {
     setUserLoading(true);
     try {
@@ -73,7 +69,6 @@ export default function ProfileHomeScreen({ navigation }: any) {
           fullName: u.full_name ?? "",
           email: u.email ?? "",
           phone: u.phone ?? "",
-          // languages, address, caregiverType are not in the DB yet — keep as empty
           languages: "",
           address: "",
           caregiverType: "",
@@ -90,18 +85,14 @@ export default function ProfileHomeScreen({ navigation }: any) {
     fetchUserProfile();
   }, [fetchUserProfile]);
 
-  // ── Fetch saved profile photo on mount ───────────────────
   const fetchSavedPhoto = useCallback(async () => {
     setPhotoLoading(true);
     try {
       const result = await getProfilePhoto();
       if (result?.success && result.data?.sas_url) {
-        // Append a cache-busting param so React Native's Image component
-        // never serves a stale/expired SAS URL from its internal cache.
         const busted = `${result.data.sas_url}&_cb=${Date.now()}`;
         setProfilePhotoUri(busted);
       } else {
-        // No photo saved yet — make sure we clear any previous URI
         setProfilePhotoUri(null);
       }
     } catch (e) {
@@ -115,7 +106,6 @@ export default function ProfileHomeScreen({ navigation }: any) {
     fetchSavedPhoto();
   }, [fetchSavedPhoto]);
 
-  // ── Pick image from library and upload ───────────────────
   const handleAvatarPress = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -136,8 +126,6 @@ export default function ProfileHomeScreen({ navigation }: any) {
     if (result.canceled) return;
 
     const imageUri = result.assets[0].uri;
-
-    // Optimistically show the local image immediately
     setProfilePhotoUri(imageUri);
     setPhotoUploading(true);
 
@@ -197,7 +185,6 @@ export default function ProfileHomeScreen({ navigation }: any) {
           fullName: editForm.fullName.trim(),
           firstLineName: editForm.fullName.trim(),
           phone: editForm.phone.trim(),
-          // keep local-only fields as entered
           languages: editForm.languages,
           address: editForm.address,
           caregiverType: editForm.caregiverType,
@@ -242,265 +229,214 @@ export default function ProfileHomeScreen({ navigation }: any) {
   const isMissing = (value?: string) => !value || !value.trim();
 
   return (
-    <View style={styles.container}>
-      <View
-        style={[styles.statusBarBackdrop, { height: insets.top }]}
-        pointerEvents="none"
-      />
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.heroCard, { paddingTop: insets.top + 18 }]}>
-          <View style={styles.heroRow}>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View
+          style={[styles.statusBarBackdrop, { height: insets.top }]}
+          pointerEvents="none"
+        />
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.heroCard, { paddingTop: insets.top + 18 }]}>
+            <View style={styles.heroRow}>
+              <TouchableOpacity
+                style={styles.avatarOuter}
+                onPress={handleAvatarPress}
+                activeOpacity={0.85}
+                disabled={photoUploading}
+              >
+                <View style={styles.avatarInner}>
+                  {photoLoading ? (
+                    <ActivityIndicator size="small" color="#6E89A6" />
+                  ) : profilePhotoUri ? (
+                    <Image
+                      source={{ uri: profilePhotoUri }}
+                      style={styles.avatarImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Ionicons name="person" size={54} color="#6E89A6" />
+                  )}
+                </View>
+                <View style={styles.avatarCameraBadge} pointerEvents="none">
+                  {photoUploading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="camera" size={14} color="#fff" />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.heroTextWrap}>
+                <Text
+                  style={[
+                    styles.heroName,
+                    !profile.firstLineName && styles.mutedHeroText,
+                  ]}
+                >
+                  {profile.firstLineName || "N/A"}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.heroRole,
+                    !profile.role && styles.mutedHeroText,
+                  ]}
+                >
+                  {profile.role || "N/A"}
+                </Text>
+
+                {(profile.email || profile.phone) ? (
+                  <>
+                    <View style={styles.heroDivider} />
+
+                    {!!profile.email && (
+                      <View style={styles.contactRow}>
+                        <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
+                        <Text style={styles.contactText}>{profile.email}</Text>
+                      </View>
+                    )}
+
+                    {!!profile.phone && (
+                      <View style={[styles.contactRow, { marginTop: 8 }]}>
+                        <Ionicons name="call-outline" size={20} color="#FFFFFF" />
+                        <Text style={styles.contactText}>{profile.phone}</Text>
+                      </View>
+                    )}
+                  </>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.contentWrap}>
+            <View style={styles.sectionCardLarge}>
+              <View style={styles.sectionHeaderLarge}>
+                <Text style={styles.sectionHeaderTitle}>Personal Information</Text>
+
+                <View style={styles.sectionHeaderActions}>
+                  <TouchableOpacity
+                    style={styles.sectionIconButton}
+                    onPress={openEditProfile}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="create-outline" size={24} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.infoListLarge}>
+                <InfoRow label="Full Name:" value={displayValue(profile.fullName)} missing={isMissing(profile.fullName)} />
+                <InfoRow label="Phone:" value={displayValue(profile.phone)} missing={isMissing(profile.phone)} />
+                <InfoRow label="Email:" value={displayValue(profile.email)} missing={isMissing(profile.email)} />
+                <InfoRow label="Language(s):" value={displayValue(profile.languages)} missing={isMissing(profile.languages)} />
+                <InfoRow label="Address:" value={displayValue(profile.address)} missing={isMissing(profile.address)} />
+                <InfoRow label="Caregiver type:" value={displayValue(profile.caregiverType)} missing={isMissing(profile.caregiverType)} />
+              </View>
+            </View>
+
             <TouchableOpacity
-              style={styles.avatarOuter}
-              onPress={handleAvatarPress}
-              activeOpacity={0.85}
-              disabled={photoUploading}
+              style={styles.babyInfoButton}
+              onPress={openSubpage}
+              activeOpacity={0.9}
             >
-              <View style={styles.avatarInner}>
-                {photoLoading ? (
-                  <ActivityIndicator size="small" color="#6E89A6" />
-                ) : profilePhotoUri ? (
-                  <Image
-                    source={{ uri: profilePhotoUri }}
-                    style={styles.avatarImage}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Ionicons name="person" size={54} color="#6E89A6" />
-                )}
-              </View>
-              <View style={styles.avatarCameraBadge} pointerEvents="none">
-                {photoUploading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Ionicons name="camera" size={14} color="#fff" />
-                )}
-              </View>
+              <Ionicons name="happy-outline" size={24} color="#FFFFFF" />
+              <Text style={styles.babyInfoButtonText}>Baby Info</Text>
             </TouchableOpacity>
 
-            <View style={styles.heroTextWrap}>
-              <Text
-                style={[
-                  styles.heroName,
-                  !profile.firstLineName && styles.mutedHeroText,
-                ]}
-              >
-                {profile.firstLineName || "N/A"}
-              </Text>
-
-              <Text
-                style={[
-                  styles.heroRole,
-                  !profile.role && styles.mutedHeroText,
-                ]}
-              >
-                {profile.role || "N/A"}
-              </Text>
-
-              {(profile.email || profile.phone) ? (
-                <>
-                  <View style={styles.heroDivider} />
-
-                  {!!profile.email && (
-                    <View style={styles.contactRow}>
-                      <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
-                      <Text style={styles.contactText}>{profile.email}</Text>
-                    </View>
-                  )}
-
-                  {!!profile.phone && (
-                    <View style={[styles.contactRow, { marginTop: 8 }]}>
-                      <Ionicons name="call-outline" size={20} color="#FFFFFF" />
-                      <Text style={styles.contactText}>{profile.phone}</Text>
-                    </View>
-                  )}
-                </>
-              ) : null}
-            </View>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+              activeOpacity={0.9}
+            >
+              <Ionicons name="log-out-outline" size={22} color="#D9534F" />
+              <Text style={styles.logoutButtonText}>Log Out</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
 
-        <View style={styles.contentWrap}>
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderTitle}>Personal Information</Text>
-
-              <View style={styles.sectionHeaderActions}>
+        <Modal
+          visible={editVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setEditVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, { paddingBottom: insets.bottom + 18 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Edit Personal Info</Text>
                 <TouchableOpacity
-                  style={styles.sectionIconButton}
-                  onPress={openEditProfile}
-                  activeOpacity={0.85}
+                  style={styles.modalCloseButton}
+                  onPress={() => setEditVisible(false)}
                 >
-                  <Ionicons name="create-outline" size={24} color="#FFFFFF" />
+                  <Ionicons name="close" size={22} color="#666" />
                 </TouchableOpacity>
               </View>
-            </View>
 
-            <View style={styles.infoList}>
-              <InfoRow label="Full Name:" value={displayValue(profile.fullName)} missing={isMissing(profile.fullName)} />
-              <InfoRow label="Phone:" value={displayValue(profile.phone)} missing={isMissing(profile.phone)} />
-              <InfoRow label="Email:" value={displayValue(profile.email)} missing={isMissing(profile.email)} />
-              <InfoRow label="Language(s):" value={displayValue(profile.languages)} missing={isMissing(profile.languages)} />
-              <InfoRow label="Address:" value={displayValue(profile.address)} missing={isMissing(profile.address)} />
-              <InfoRow label="Caregiver type:" value={displayValue(profile.caregiverType)} missing={isMissing(profile.caregiverType)} />
-            </View>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderTitle}>General Settings</Text>
-              <Ionicons name="settings" size={28} color="#FFFFFF" />
-            </View>
-
-            <View style={styles.settingsBody}>
-              <Text style={styles.settingsGroupTitle}>Notifications</Text>
-
-              <View style={styles.settingRowCompact}>
-                <Text style={styles.settingLabel}>Reminders:</Text>
-                <Switch
-                  value={remindersEnabled}
-                  onValueChange={setRemindersEnabled}
-                  trackColor={{ false: "#D6D6D6", true: "#8DBCF1" }}
-                  thumbColor="#F4F4F4"
-                  ios_backgroundColor="#D6D6D6"
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Field
+                  label="Full Name"
+                  value={editForm.fullName}
+                  onChangeText={(v) => setEditForm((p) => ({ ...p, fullName: v }))}
                 />
-              </View>
+                <Field
+                  label="Phone Number"
+                  value={editForm.phone}
+                  onChangeText={(v) => setEditForm((p) => ({ ...p, phone: v }))}
+                  placeholder="Enter phone number"
+                />
+                <Field
+                  label="Email"
+                  value={editForm.email}
+                  onChangeText={(v) => setEditForm((p) => ({ ...p, email: v }))}
+                  placeholder="Enter email"
+                />
+                <Field
+                  label="Languages"
+                  value={editForm.languages}
+                  onChangeText={(v) => setEditForm((p) => ({ ...p, languages: v }))}
+                  placeholder="English, French..."
+                />
+                <Field
+                  label="Address"
+                  value={editForm.address}
+                  onChangeText={(v) => setEditForm((p) => ({ ...p, address: v }))}
+                  placeholder="Enter address"
+                  multiline
+                />
+                <Field
+                  label="Caregiver Type"
+                  value={editForm.caregiverType}
+                  onChangeText={(v) => setEditForm((p) => ({ ...p, caregiverType: v }))}
+                  placeholder="Mother, Father, Guardian..."
+                />
+              </ScrollView>
 
-              <View style={styles.settingRowCompact}>
-                <Text style={styles.settingLabel}>Alert Type:</Text>
-                <TouchableOpacity style={styles.fakeDropdown} activeOpacity={0.85}>
-                  <Ionicons name="chevron-down" size={20} color="#737373" />
-                  <Text style={styles.fakeDropdownText}>{profile.alertType}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.settingsGroupTitle, styles.settingsGroupTitleTight]}>
-                Accessibility
-              </Text>
-
-              <View style={styles.settingRowCompact}>
-                <Text style={styles.settingLabel}>Theme:</Text>
+              <View style={styles.modalActionRow}>
                 <TouchableOpacity
-                  style={[styles.fakeDropdown, styles.themeDropdown]}
-                  activeOpacity={0.85}
+                  style={styles.modalCancelButton}
+                  onPress={() => setEditVisible(false)}
                 >
-                  <Ionicons name="chevron-down" size={20} color="#737373" />
-                  <Text style={styles.fakeDropdownText}>{profile.theme}</Text>
-                  <View style={styles.themePreview} />
+                  <Text style={styles.modalCancelText}>Cancel</Text>
                 </TouchableOpacity>
-              </View>
 
-              <View style={styles.settingRowCompactNoBottom}>
-                <Text style={styles.settingLabel}>Font Scale:</Text>
-                <TouchableOpacity style={styles.fontScalePill} activeOpacity={0.85}>
-                  <Text style={styles.fontScaleText}>{profile.fontScale}</Text>
+                <TouchableOpacity
+                  style={[styles.modalSaveButton, savingProfile && { opacity: 0.6 }]}
+                  onPress={saveEditProfile}
+                  disabled={savingProfile}
+                >
+                  <Text style={styles.modalSaveText}>
+                    {savingProfile ? "Saving..." : "Save Changes"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
-
-          <TouchableOpacity
-            style={styles.babyInfoButton}
-            onPress={openSubpage}
-            activeOpacity={0.9}
-          >
-            <Ionicons name="happy-outline" size={24} color="#FFFFFF" />
-            <Text style={styles.babyInfoButtonText}>Baby Info</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.9}
-          >
-            <Ionicons name="log-out-outline" size={22} color="#D9534F" />
-            <Text style={styles.logoutButtonText}>Log Out</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      <Modal
-        visible={editVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setEditVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { paddingBottom: insets.bottom + 18 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Personal Info</Text>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => setEditVisible(false)}
-              >
-                <Ionicons name="close" size={22} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Field
-                label="Full Name"
-                value={editForm.fullName}
-                onChangeText={(v) => setEditForm((p) => ({ ...p, fullName: v }))}
-              />
-              <Field
-                label="Phone Number"
-                value={editForm.phone}
-                onChangeText={(v) => setEditForm((p) => ({ ...p, phone: v }))}
-                placeholder="Enter phone number"
-              />
-              <Field
-                label="Email"
-                value={editForm.email}
-                onChangeText={(v) => setEditForm((p) => ({ ...p, email: v }))}
-                placeholder="Enter email"
-              />
-              <Field
-                label="Languages"
-                value={editForm.languages}
-                onChangeText={(v) => setEditForm((p) => ({ ...p, languages: v }))}
-                placeholder="English, French..."
-              />
-              <Field
-                label="Address"
-                value={editForm.address}
-                onChangeText={(v) => setEditForm((p) => ({ ...p, address: v }))}
-                placeholder="Enter address"
-                multiline
-              />
-              <Field
-                label="Caregiver Type"
-                value={editForm.caregiverType}
-                onChangeText={(v) => setEditForm((p) => ({ ...p, caregiverType: v }))}
-                placeholder="Mother, Father, Guardian..."
-              />
-            </ScrollView>
-
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setEditVisible(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalSaveButton, savingProfile && { opacity: 0.6 }]}
-                onPress={saveEditProfile}
-                disabled={savingProfile}
-              >
-                <Text style={styles.modalSaveText}>
-                  {savingProfile ? "Saving..." : "Save Changes"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -552,6 +488,11 @@ function Field({
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#EDF3F7",
+  },
+
   container: {
     flex: 1,
     backgroundColor: "#EDF3F7",
@@ -668,7 +609,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  sectionCard: {
+  sectionCardLarge: {
     marginTop: 16,
     backgroundColor: "#F3F3F3",
     borderRadius: 16,
@@ -677,12 +618,12 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  sectionHeader: {
-    minHeight: 58,
+  sectionHeaderLarge: {
+    minHeight: 66,
     backgroundColor: "#8DBCF1",
     borderBottomWidth: 1,
     borderBottomColor: "#7BAEE7",
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -713,125 +654,34 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.14)",
   },
 
-  infoList: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+  infoListLarge: {
+    paddingHorizontal: 14,
+    paddingVertical: 16,
   },
 
   infoRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 9,
+    marginBottom: 14,
   },
 
   infoLabel: {
     width: 145,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
     color: "#555555",
   },
 
   infoValue: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     color: "#777777",
-    lineHeight: 20,
+    lineHeight: 22,
     fontWeight: "500",
   },
 
   infoValueMissing: {
     color: "#B1B1B1",
-  },
-
-  settingsBody: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
-  },
-
-  settingsGroupTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#555555",
-    marginBottom: 8,
-  },
-
-  settingsGroupTitleTight: {
-    marginTop: 2,
-  },
-
-  settingRowCompact: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-    gap: 12,
-  },
-
-  settingRowCompactNoBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-
-  settingLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#555555",
-  },
-
-  fakeDropdown: {
-    minWidth: 108,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "#ADADAD",
-    backgroundColor: "#F5F5F5",
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  fakeDropdownText: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: "#6F6F6F",
-    fontWeight: "500",
-  },
-
-  themeDropdown: {
-    minWidth: 156,
-    justifyContent: "flex-start",
-  },
-
-  themePreview: {
-    marginLeft: 8,
-    width: 18,
-    height: 18,
-    borderRadius: 2,
-    backgroundColor: "#8DBCF1",
-    borderWidth: 1,
-    borderColor: "#6F9FD5",
-  },
-
-  fontScalePill: {
-    minWidth: 58,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "#ADADAD",
-    backgroundColor: "#F5F5F5",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 10,
-  },
-
-  fontScaleText: {
-    fontSize: 14,
-    color: "#6F6F6F",
-    fontWeight: "500",
   },
 
   babyInfoButton: {
@@ -972,5 +822,3 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 });
-
-
