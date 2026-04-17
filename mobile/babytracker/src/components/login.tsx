@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,6 +39,44 @@ export default function Login({ navigation, route }: Props) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Animation ref for floating image
+  const headerImageAnim = useRef(new Animated.Value(-width * 0.4)).current;
+  const headerTextAnim = useRef(new Animated.Value(-width * 0.4)).current;
+  const subtitleTextAnim = useRef(new Animated.Value(width * 0.4)).current;
+  const formOpacity = useRef(new Animated.Value(0)).current;
+
+  // Trigger animations on mount
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(headerImageAnim, {
+          toValue: 0,
+          duration: 750,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(headerTextAnim, {
+          toValue: 0,
+          duration: 750,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(subtitleTextAnim, {
+          toValue: 0,
+          duration: 750,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(formOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
 
   // Validate email format
   const isValidEmail = (emailValue: string): boolean => {
@@ -145,21 +185,41 @@ export default function Login({ navigation, route }: Props) {
         >
           {/* Header Section */}
           <View style={styles.header}>
-            <Image
-              source={require("../images/login/loginIcons.png")}
-              style={styles.headerImage}
-              resizeMode="contain"
-            />
+            <Animated.View
+              style={{
+                transform: [{ translateX: headerImageAnim }],
+              }}
+            >
+              <Image
+                source={require("../images/login/loginIcons.png")}
+                style={styles.headerImage}
+                resizeMode="contain"
+              />
+            </Animated.View>
 
             {/* Updated text section */}
-            <Text style={styles.welcomeTitle}>Welcome Back!</Text>
-            <Text style={styles.welcomeSubtitle}>
-              Log back into your Baby Steps account
-            </Text>
+            <Animated.View
+              style={{
+                transform: [{ translateX: headerTextAnim }],
+              }}
+            >
+              <Text style={styles.welcomeTitle}>Welcome Back!</Text>
+            </Animated.View>
+            <Animated.View
+              style={{
+                transform: [{ translateX: subtitleTextAnim }],
+              }}
+            >
+              <Text style={styles.welcomeSubtitle}>
+                Log back into your Baby Steps account
+              </Text>
+            </Animated.View>
           </View>
 
           {/* Input Fields */}
-          <View style={styles.formContainer}>
+          <Animated.View 
+            style={[styles.formContainer, { opacity: formOpacity }]}
+          >
             {/* Email Input */}
             <View style={styles.inputWrapper}>
               <View style={styles.inputContainer}>
@@ -292,7 +352,7 @@ export default function Login({ navigation, route }: Props) {
                 <Text style={styles.goBackText}>Go Back</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
 
         </ScrollView>
       </KeyboardAvoidingView>

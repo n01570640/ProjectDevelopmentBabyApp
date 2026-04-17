@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Animated,
+  Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,6 +45,43 @@ export default function SignUp({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  // Animation refs — matches login page behavior
+  const headerImageAnim = useRef(new Animated.Value(-width * 0.4)).current;
+  const headerTextAnim = useRef(new Animated.Value(-width * 0.4)).current;
+  const subtitleTextAnim = useRef(new Animated.Value(width * 0.4)).current;
+  const formOpacity = useRef(new Animated.Value(0)).current;
+
+  // Trigger animations on mount
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(headerImageAnim, {
+          toValue: 0,
+          duration: 750,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(headerTextAnim, {
+          toValue: 0,
+          duration: 750,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(subtitleTextAnim, {
+          toValue: 0,
+          duration: 750,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(formOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -160,20 +199,41 @@ export default function SignUp({ navigation, route }: Props) {
         >
           {/* Header Section */}
           <View style={styles.header}>
-            <Image
-              source={require("../images/register/registerIcons.png")}
-              style={styles.headerImage}
-              resizeMode="contain"
-            />
+            <Animated.View
+              style={{
+                transform: [{ translateX: headerImageAnim }],
+              }}
+            >
+              <Image
+                source={require("../images/register/registerIcons.png")}
+                style={styles.headerImage}
+                resizeMode="contain"
+              />
+            </Animated.View>
 
-            <Text style={styles.title}>Sign Up with Us!</Text>
-            <Text style={styles.welcomeText}>
-              Create a Baby Steps account
-            </Text>
+            <Animated.View
+              style={{
+                transform: [{ translateX: headerTextAnim }],
+              }}
+            >
+              <Text style={styles.title}>Sign Up with Us!</Text>
+            </Animated.View>
+
+            <Animated.View
+              style={{
+                transform: [{ translateX: subtitleTextAnim }],
+              }}
+            >
+              <Text style={styles.welcomeText}>
+                Create a Baby Steps account
+              </Text>
+            </Animated.View>
           </View>
 
           {/* Input Fields */}
-          <View style={styles.formContainer}>
+          <Animated.View
+            style={[styles.formContainer, { opacity: formOpacity }]}
+          >
             {/* Full Name Input */}
             <View style={styles.inputWrapper}>
               <View style={styles.inputContainer}>
@@ -383,7 +443,7 @@ export default function SignUp({ navigation, route }: Props) {
               />
               <Text style={styles.goBackText}>Go Back</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
         </ScrollView>
       </KeyboardAvoidingView>
