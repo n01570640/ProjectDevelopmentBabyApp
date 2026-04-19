@@ -118,13 +118,43 @@ const transformDbDataToChartData = (dbData: any): Record<MetricType, MetricChart
   };
 };
 
+const parseLocalDateTime = (value: string) => {
+  const localDateTimeRegex = /^\s*(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?\s*$/;
+  const match = value.match(localDateTimeRegex);
+  if (!match) return null;
+
+  const [,
+    year,
+    month,
+    day,
+    hour = "00",
+    minute = "00",
+    second = "00",
+    milli = "0",
+  ] = match;
+
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(milli.padEnd(3, "0"))
+  );
+};
+
 const parseDateSafe = (value?: string | null) => {
   if (!value) return null;
 
-  const direct = new Date(value);
+  const raw = value.trim();
+  const direct = new Date(raw);
   if (!Number.isNaN(direct.getTime())) return direct;
 
-  const normalized = value.replace(" ", "T");
+  const local = parseLocalDateTime(raw);
+  if (local) return local;
+
+  const normalized = raw.replace(" ", "T");
   const parsed = new Date(normalized);
   if (!Number.isNaN(parsed.getTime())) return parsed;
 
@@ -589,7 +619,7 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.sectionTopRow}>
             <Text style={styles.statsTitle}>Children&apos;s Statistics</Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate("Statistics")}
+              onPress={() => navigation.getParent?.()?.navigate("StatisticsTab")}
               activeOpacity={0.85}
               style={styles.settingsButton}
             >
