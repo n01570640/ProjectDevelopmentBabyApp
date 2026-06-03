@@ -58,3 +58,6 @@ logs/
 # Documentation
 claude.md
 /claudedocs/
+node_modules
+nul
+.claude/

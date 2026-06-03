@@ -1,0 +1,1041 @@
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  Alert,
+  Image,
+  ActivityIndicator,
+  Share,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from "react-native";
+
+if (Platform.OS === "android") {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import * as ImagePicker from "expo-image-picker";
+import { scale, verticalScale, moderateScale } from "../utils/responsive";
+import { Baby } from "../types/baby.types";
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { fetchBabies } from '../store/slices/babiesSlice';
+import { createInvitation, getInvitations, cancelInvitation } from "../../services/invitationService";
+import { getBabyProfilePhoto } from "../../services/babyProfilePhotoService";
+import { useFocusEffect } from "@react-navigation/native";
+import { getCaregivers, removeCaregiver } from "../../services/caregiverService";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { colors } from "../theme/colors";
+import ModalWrapper from "./shared/ModalWrapper";
+
+interface ShareModalProps {
+  baby: Baby | null;
+  visible: boolean;
+  onClose: () => void;
+}
+
+function ShareModal({ baby, visible, onClose }: ShareModalProps) {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  if (!baby) return null;
+
+  const handleSendInvite = async () => {
+    setFeedback(null);
+    if (!email.trim()) {
+      setFeedback({ type: "error", message: "Please enter an email address" });
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await createInvitation(baby.id, email.trim(), 2);
+      if (result?.success && result.data?.token) {
+        const inviteLink = `babytracker://invitations/${result.data.token}`;
+        setEmail("");
+        setFeedback(null);
+        onClose();
+        try {
+          await Share.share({
+            message: `You've been invited to help care for ${baby.name}! Open this link to accept: ${inviteLink}`,
+          });
+        } catch {}
+      } else {
+        setFeedback({ type: "error", message: result?.message ?? "Failed to create invitation" });
+      }
+    } catch (error: any) {
+      setFeedback({ type: "error", message: error.message ?? "Failed to send invitation" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ModalWrapper visible={visible} onClose={onClose} title={`Share ${baby.name}`}>
+          {feedback && (
+            <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+              <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                {feedback.message}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="caregiver@email.com"
+            style={styles.input}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          <Text style={styles.roleText}>
+            Role: <Text style={styles.roleBold}>SECONDARY</Text>
+          </Text>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSendInvite}
+              style={[styles.sendButton, sending && { opacity: 0.6 }]}
+              disabled={sending}
+            >
+              <Text style={styles.sendButtonText}>
+                {sending ? "Sending..." : "Send Invite"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+    </ModalWrapper>
+  );
+}
+
+interface CaregiversModalProps {
+  baby: Baby | null;
+  visible: boolean;
+  onClose: () => void;
+}
+
+interface Caregiver {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
+interface PhotoModalProps {
+  baby: Baby | null;
+  visible: boolean;
+  onClose: () => void;
+  onTakePhoto: () => void;
+  onChooseFromLibrary: () => void;
+}
+
+function PhotoModal({
+  baby,
+  visible,
+  onClose,
+  onTakePhoto,
+  onChooseFromLibrary,
+}: PhotoModalProps) {
+  if (!baby) return null;
+
+  return (
+    <ModalWrapper visible={visible} onClose={onClose} title={`Add Photo for ${baby.name}`}>
+          <TouchableOpacity
+            style={styles.photoOption}
+            onPress={() => {
+              onClose();
+              onTakePhoto();
+            }}
+          >
+            <Ionicons name="camera-outline" size={24} color={colors.primary} />
+            <Text style={styles.photoOptionText}>Take Photo</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.photoOption}
+            onPress={() => {
+              onClose();
+              onChooseFromLibrary();
+            }}
+          >
+            <Ionicons name="images-outline" size={24} color={colors.primary} />
+            <Text style={styles.photoOptionText}>Choose from Library</Text>
+          </TouchableOpacity>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+    </ModalWrapper>
+  );
+}
+
+interface PendingInvite {
+  invite_id: number;
+  invited_email: string;
+  invited_role: string;
+}
+
+function CaregiversModal({ baby, visible, onClose }: CaregiversModalProps) {
+  const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmingType, setConfirmingType] = useState<"caregiver" | "invite" | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (!baby) return;
+    setLoading(true);
+    try {
+      const res = await getCaregivers(baby.id);
+      if (res?.success && Array.isArray(res.data)) {
+        setCaregivers(
+          res.data.map((c: any) => ({
+            id: c.user_id,
+            name: c.full_name,
+            email: c.email,
+            role: c.access_role?.replace("_CAREGIVER", "") ?? c.access_role,
+          }))
+        );
+      }
+      if (baby.canShare) {
+        const invRes = await getInvitations(baby.id);
+        if (invRes?.success && Array.isArray(invRes.data)) {
+          setPendingInvites(invRes.data);
+        }
+      }
+    } catch (e) {
+      console.error("CaregiversModal: failed to fetch data", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [baby]);
+
+  useEffect(() => {
+    if (visible && baby) {
+      fetchData();
+    }
+  }, [visible, baby, fetchData]);
+
+  if (!baby) return null;
+
+  const showFeedback = (type: "success" | "error", message: string) => {
+    setFeedback({ type, message });
+    setTimeout(() => setFeedback(null), 2500);
+  };
+
+  const handleRemoveCaregiver = (caregiver: Caregiver) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setConfirmingId(`caregiver-${caregiver.id}`);
+    setConfirmingType("caregiver");
+  };
+
+  const handleCancelInvite = (invite: PendingInvite) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setConfirmingId(`invite-${invite.invite_id}`);
+    setConfirmingType("invite");
+  };
+
+  const cancelConfirm = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setConfirmingId(null);
+    setConfirmingType(null);
+  };
+
+  const confirmAction = async (item: Caregiver | PendingInvite) => {
+    if (!baby || actionLoading) return;
+    setActionLoading(true);
+    try {
+      if (confirmingType === "caregiver") {
+        const cg = item as Caregiver;
+        const res = await removeCaregiver(baby.id, cg.id);
+        if (res?.success) {
+          showFeedback("success", `${cg.name} removed`);
+          fetchData();
+        } else {
+          showFeedback("error", res?.message ?? "Failed to remove caregiver");
+        }
+      } else {
+        const inv = item as PendingInvite;
+        const res = await cancelInvitation(baby.id, inv.invite_id);
+        if (res?.success) {
+          showFeedback("success", `Invitation to ${inv.invited_email} cancelled`);
+          fetchData();
+        } else {
+          showFeedback("error", res?.message ?? "Failed to cancel invitation");
+        }
+      }
+    } catch (e: any) {
+      showFeedback("error", e.message ?? "An error occurred");
+    } finally {
+      setActionLoading(false);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setConfirmingId(null);
+      setConfirmingType(null);
+    }
+  };
+
+  return (
+    <ModalWrapper visible={visible} onClose={onClose} title={`${baby.name} — Caregivers`}>
+
+          {loading ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 20 }} />
+          ) : (
+            <ScrollView style={styles.caregiversList}>
+              {feedback && (
+                <View style={feedback.type === "success" ? styles.feedbackSuccess : styles.feedbackError}>
+                  <Text style={feedback.type === "success" ? styles.feedbackSuccessText : styles.feedbackErrorText}>
+                    {feedback.message}
+                  </Text>
+                </View>
+              )}
+
+              {caregivers.map((caregiver) => {
+                const isConfirming = confirmingId === `caregiver-${caregiver.id}`;
+                return (
+                  <View
+                    key={caregiver.id}
+                    style={[styles.caregiverItem, isConfirming && styles.caregiverItemConfirming]}
+                  >
+                    {isConfirming ? (
+                      <>
+                        <Text style={styles.confirmText}>
+                          Remove {caregiver.name}?
+                        </Text>
+                        <View style={styles.confirmActionsStacked}>
+                          <TouchableOpacity
+                            onPress={() => confirmAction(caregiver)}
+                            style={[styles.confirmRemoveBtn, actionLoading && { opacity: 0.6 }]}
+                            disabled={actionLoading}
+                          >
+                            <Text style={styles.confirmRemoveText}>
+                              {actionLoading ? "..." : "Yes"}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={cancelConfirm} style={styles.confirmCancelBtn}>
+                            <Text style={styles.confirmCancelText}>No</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.caregiverInfo}>
+                          <Text style={styles.caregiverName}>{caregiver.name}</Text>
+                          <Text style={styles.caregiverEmail}>{caregiver.email}</Text>
+                          <Text style={styles.caregiverRole}>{caregiver.role}</Text>
+                        </View>
+                        {baby.role === "PRIMARY" && caregiver.role !== "PRIMARY" && (
+                          <TouchableOpacity
+                            onPress={() => handleRemoveCaregiver(caregiver)}
+                            style={styles.removeButton}
+                          >
+                            <Ionicons name="trash-outline" size={20} color={colors.error} />
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+
+              {pendingInvites.length > 0 && (
+                <>
+                  <Text style={[styles.caregiverRole, { marginTop: 10, marginBottom: 6 }]}>
+                    PENDING INVITATIONS
+                  </Text>
+                  {pendingInvites.map((invite) => {
+                    const isConfirming = confirmingId === `invite-${invite.invite_id}`;
+                    return (
+                      <View
+                        key={invite.invite_id}
+                        style={[styles.caregiverItem, isConfirming && styles.caregiverItemConfirming]}
+                      >
+                        {isConfirming ? (
+                          <>
+                            <Text style={styles.confirmText}>
+                              Cancel invite to {invite.invited_email}?
+                            </Text>
+                            <View style={styles.confirmActionsStacked}>
+                              <TouchableOpacity
+                                onPress={() => confirmAction(invite)}
+                                style={[styles.confirmRemoveBtn, actionLoading && { opacity: 0.6 }]}
+                                disabled={actionLoading}
+                              >
+                                <Text style={styles.confirmRemoveText}>
+                                  {actionLoading ? "..." : "Yes"}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={cancelConfirm} style={styles.confirmCancelBtn}>
+                                <Text style={styles.confirmCancelText}>No</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        ) : (
+                          <>
+                            <View style={styles.caregiverInfo}>
+                              <Text style={styles.caregiverEmail}>{invite.invited_email}</Text>
+                              <Text style={styles.caregiverRole}>
+                                {invite.invited_role?.replace("_CAREGIVER", "") ?? "PENDING"}
+                              </Text>
+                            </View>
+                            {baby.role === "PRIMARY" && (
+                              <TouchableOpacity
+                                onPress={() => handleCancelInvite(invite)}
+                                style={styles.removeButton}
+                              >
+                                <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+                              </TouchableOpacity>
+                            )}
+                          </>
+                        )}
+                      </View>
+                    );
+                  })}
+                </>
+              )}
+            </ScrollView>
+          )}
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity onPress={onClose} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+    </ModalWrapper>
+  );
+}
+
+export default function ProfileScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
+  const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
+  const [showShare, setShowShare] = useState(false);
+  const [showCaregivers, setShowCaregivers] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [babyImages, setBabyImages] = useState<{ [key: number]: string }>({});
+
+  // ── Redux store data
+  const dispatch = useAppDispatch();
+  const { items: rawBabies, loading } = useAppSelector(state => state.babies);
+
+  const babies: Baby[] = useMemo(() =>
+    rawBabies.map((b: any) => ({
+      id: b.baby_id,
+      name: b.display_name,
+      dob: b.date_of_birth?.slice(0, 10) ?? "",
+      sex: b.sex === "male" ? "M" : b.sex === "female" ? "F" : b.sex ?? "—",
+      role: b.access_role === "PRIMARY_CAREGIVER" ? "PRIMARY" : "SECONDARY",
+      canShare: b.can_share ?? false,
+    })),
+    [rawBabies]
+  );
+
+  useEffect(() => {
+    dispatch(fetchBabies());
+  }, [dispatch]);
+
+  const loadBabyPhotos = useCallback(() => {
+    if (!babies || babies.length === 0) return;
+    babies.forEach(async (baby: Baby) => {
+      try {
+        const result = await getBabyProfilePhoto(baby.id);
+        if (result?.success && result.data?.sas_url) {
+          setBabyImages((prev) => ({ ...prev, [baby.id]: result.data.sas_url }));
+        }
+      } catch {
+        // ignore — leave placeholder
+      }
+    });
+  }, [babies]);
+
+  useEffect(() => { loadBabyPhotos(); }, [loadBabyPhotos]);
+  useFocusEffect(useCallback(() => { loadBabyPhotos(); }, [loadBabyPhotos]));
+
+  const handleViewHistory = (baby: Baby) => {
+    setSelectedBaby(baby);
+    navigation.navigate("History", { baby });
+  };
+
+  const handleSharePress = (baby: Baby) => {
+    setSelectedBaby(baby);
+    setShowShare(true);
+  };
+
+  const handleCaregiversPress = (baby: Baby) => {
+    setSelectedBaby(baby);
+    setShowCaregivers(true);
+  };
+
+  const handleAddPhoto = (baby: Baby) => {
+    console.log("handleAddPhoto called for", baby.name);
+    setSelectedBaby(baby);
+    setShowPhotoModal(true);
+  };
+
+  const handleTakePhoto = async () => {
+    if (!selectedBaby) return;
+    console.log("Take Photo pressed");
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert("Permission Required", "Camera permission is required");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+    if (!result.canceled) {
+      console.log("Image selected:", result.assets[0].uri);
+      setBabyImages((prev) => ({
+        ...prev,
+        [selectedBaby.id]: result.assets[0].uri,
+      }));
+    }
+  };
+
+  const handleChooseFromLibrary = async () => {
+    if (!selectedBaby) return;
+    console.log("Choose from Library pressed");
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert(
+        "Permission Required",
+        "Photo library permission is required",
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+    if (!result.canceled) {
+      console.log("Image selected:", result.assets[0].uri);
+      setBabyImages((prev) => ({
+        ...prev,
+        [selectedBaby.id]: result.assets[0].uri,
+      }));
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={[colors.primary, colors.accent]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.headerGradient, { paddingTop: insets.top + verticalScale(12) }]}
+      >
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>My Babies</Text>
+            <Text style={styles.headerSubtitle}>Manage profiles and caregivers</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.addBabyBtn}
+            onPress={() => navigation.navigate("AddChild")}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={20} color="#fff" />
+            <Text style={styles.addBabyBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+
+        {/* Loading */}
+        {loading && (
+          <View style={styles.centeredState}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.stateText}>Loading babies...</Text>
+          </View>
+        )}
+
+        {/* Empty state */}
+        {!loading && babies.length === 0 && (
+          <View style={styles.centeredState}>
+            <Ionicons name="people-outline" size={52} color="#c0d4e8" />
+            <Text style={styles.stateText}>No babies added yet</Text>
+            <TouchableOpacity
+              style={styles.addBabyBtnLarge}
+              onPress={() => navigation.navigate("AddChild")}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={styles.addBabyBtnText}>Add your first baby</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Baby cards */}
+        {!loading &&
+          babies.map((baby) => (
+          <View key={baby.id} style={styles.card}>
+            <View style={styles.cardTop}>
+              <TouchableOpacity
+                style={styles.babyIconContainer}
+                onPress={() => {
+                  console.log("TouchableOpacity pressed for baby:", baby.name);
+                  handleAddPhoto(baby);
+                }}
+                activeOpacity={0.7}
+              >
+                {babyImages[baby.id] ? (
+                  <Image
+                    source={{ uri: babyImages[baby.id] }}
+                    style={styles.babyImage}
+                  />
+                ) : (
+                  <Ionicons name="person" size={40} color={colors.primary} />
+                )}
+                <View style={styles.cameraIconOverlay} pointerEvents="none">
+                  <Ionicons name="camera" size={16} color="#fff" />
+                </View>
+              </TouchableOpacity>
+              <View style={styles.cardInfo}>
+                <View style={styles.header}>
+                  <Text style={styles.babyName}>{baby.name}</Text>
+                  <View
+                    style={[
+                      styles.badge,
+                      baby.role === "PRIMARY"
+                        ? styles.badgePrimary
+                        : styles.badgeSecondary,
+                    ]}
+                  >
+                    <Text style={styles.badgeText}>{baby.role}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.infoText}>DOB: {baby.dob}</Text>
+                <Text style={styles.infoText}>Sex: {baby.sex}</Text>
+              </View>
+            </View>
+
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.actionButtonPrimary]}
+                onPress={() => navigation.navigate("BabyDetail", { babyId: baby.id })}
+              >
+                <Text style={styles.actionButtonText}>View Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleViewHistory(baby)}
+              >
+                <Text style={styles.actionButtonText}>History</Text>
+              </TouchableOpacity>
+
+              {baby.role === "PRIMARY" && (
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleCaregiversPress(baby)}
+                >
+                  <Text style={styles.actionButtonText}>Caregivers</Text>
+                </TouchableOpacity>
+              )}
+
+              {baby.canShare && (
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleSharePress(baby)}
+                >
+                  <Text style={styles.actionButtonText}>Share</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      <ShareModal
+        baby={selectedBaby}
+        visible={showShare}
+        onClose={() => setShowShare(false)}
+      />
+
+      <CaregiversModal
+        baby={selectedBaby}
+        visible={showCaregivers}
+        onClose={() => setShowCaregivers(false)}
+      />
+
+      <PhotoModal
+        baby={selectedBaby}
+        visible={showPhotoModal}
+        onClose={() => setShowPhotoModal(false)}
+        onTakePhoto={handleTakePhoto}
+        onChooseFromLibrary={handleChooseFromLibrary}
+      />
+
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerGradient: {
+    paddingHorizontal: scale(16),
+    paddingBottom: verticalScale(16),
+    borderBottomLeftRadius: moderateScale(34),
+    borderBottomRightRadius: moderateScale(34),
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: scale(12),
+  },
+  backBtn: {
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: moderateScale(20),
+    fontWeight: "700",
+    color: "#fff",
+  },
+  headerSubtitle: {
+    fontSize: moderateScale(12),
+    color: "rgba(255,255,255,0.85)",
+    marginTop: 2,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 100,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#555",
+  },
+  addBabyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addBabyBtnLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 16,
+  },
+  addBabyBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  centeredState: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  stateText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#aaa",
+    fontWeight: "500",
+  },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+  babyIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#f0f8ff",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 15,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    overflow: "visible",
+  },
+  babyImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 35,
+    overflow: "hidden",
+  },
+  cameraIconOverlay: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  babyName: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: colors.textPrimary,
+  },
+  badge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  badgePrimary: {
+    backgroundColor: colors.success,
+  },
+  badgeSecondary: {
+    backgroundColor: colors.textTertiary,
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  infoText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 10,
+  },
+  actionButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  actionButtonPrimary: {
+    backgroundColor: colors.primaryDark,
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  label: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 5,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 15,
+    fontSize: 14,
+  },
+  roleText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 15,
+  },
+  roleBold: {
+    fontWeight: "bold",
+    color: colors.textPrimary,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  cancelButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 6,
+    backgroundColor: colors.cancel,
+  },
+  cancelButtonText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  sendButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  sendButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  caregiversList: {
+    maxHeight: 300,
+    marginBottom: 15,
+  },
+  caregiverItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 12,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  caregiverInfo: {
+    flex: 1,
+  },
+  caregiverName: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  caregiverEmail: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  caregiverRole: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontWeight: "600",
+  },
+  removeButton: {
+    padding: 8,
+    marginLeft: 10,
+  },
+  caregiverItemConfirming: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.errorBorder,
+  },
+  confirmText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.errorDark,
+  },
+  confirmActionsStacked: {
+    flexDirection: "column",
+    gap: 4,
+    marginLeft: 8,
+    alignItems: "stretch",
+  },
+  confirmCancelBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: colors.cancel,
+    alignItems: "center",
+  },
+  confirmCancelText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.textPrimary,
+  },
+  confirmRemoveBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: colors.error,
+    alignItems: "center",
+  },
+  confirmRemoveText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  feedbackSuccess: {
+    backgroundColor: colors.successLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackSuccessText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.successDark,
+  },
+  feedbackError: {
+    backgroundColor: colors.errorLight,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  feedbackErrorText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.errorDark,
+  },
+  photoOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 15,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  photoOptionText: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    marginLeft: 15,
+    fontWeight: "500",
+  },
+});

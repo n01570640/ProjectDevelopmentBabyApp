@@ -1,0 +1,244 @@
+import { Request, Response } from "express";
+import * as invitationService from "../services/invitation.service";
+import { CreateInvitationDTO } from "../dtos/invitation.dto";
+
+/**
+ * POST /api/v1/babies/:babyId/invitations
+ * Create a new invitation (requires can_share permission)
+ */
+export async function createInvitation(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const userId = req.user?.user_id;
+    const babyId = parseInt(req.params.babyId, 10);
+
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
+    const data: CreateInvitationDTO = {
+      invited_email: req.body.invited_email,
+      invited_role: req.body.invited_role,
+    };
+
+    const invitation = await invitationService.createInvitation(
+      babyId,
+      userId,
+      data
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Invitation created successfully",
+      data: invitation,
+    });
+  } catch (error: any) {
+    console.error("Error creating invitation:", error);
+
+    // Handle known errors
+    if (error.message.includes("already a pending invitation")) {
+      res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
+    if (error.message.includes("already has access")) {
+      res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to create invitation",
+    });
+  }
+}
+
+/**
+ * GET /api/v1/babies/:babyId/invitations
+ * List pending invitations for a baby (requires can_share permission)
+ */
+export async function listInvitations(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const babyId = parseInt(req.params.babyId, 10);
+
+    if (isNaN(babyId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID" });
+      return;
+    }
+
+    const invitations = await invitationService.getPendingInvitations(babyId);
+
+    res.status(200).json({
+      success: true,
+      data: invitations,
+    });
+  } catch (error: any) {
+    console.error("Error listing invitations:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to list invitations",
+    });
+  }
+}
+
+/**
+ * DELETE /api/v1/babies/:babyId/invitations/:inviteId
+ * Cancel an invitation (inviter only)
+ */
+export async function cancelInvitation(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const userId = req.user?.user_id;
+    const babyId = parseInt(req.params.babyId, 10);
+    const inviteId = parseInt(req.params.inviteId, 10);
+
+    if (isNaN(babyId) || isNaN(inviteId)) {
+      res.status(400).json({ success: false, message: "Invalid baby ID or invite ID" });
+      return;
+    }
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
+    await invitationService.cancelInvitation(inviteId, userId, babyId);
+
+    res.status(200).json({
+      success: true,
+      message: "Invitation cancelled successfully",
+    });
+  } catch (error: any) {
+    console.error("Error cancelling invitation:", error);
+
+    if (error.message?.includes("not found") ||
+        error.message?.includes("Only the inviter") ||
+        error.message?.includes("Cannot cancel")) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to cancel invitation",
+    });
+  }
+}
+
+/**
+ * GET /api/v1/invitations/:token
+ * Get invitation details by token (public - for viewing before accepting)
+ */
+export async function getInvitationByToken(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const token = req.params.token;
+
+    const invitation = await invitationService.getInvitationByToken(token);
+
+    if (!invitation) {
+      res.status(404).json({
+        success: false,
+        message: "Invitation not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: invitation,
+    });
+  } catch (error: any) {
+    console.error("Error getting invitation:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get invitation",
+    });
+  }
+}
+
+/**
+ * POST /api/v1/invitations/:token/accept
+ * Accept an invitation (requires authentication)
+ */
+export async function acceptInvitation(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const userId = req.user?.user_id;
+    const userEmail = req.user?.email;
+    const token = req.params.token;
+
+    if (!userId || !userEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
+    const result = await invitationService.acceptInvitation(
+      token,
+      userId,
+      userEmail
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Invitation accepted successfully",
+      data: {
+        baby_id: result.baby_id,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error accepting invitation:", error);
+
+    if (error.message?.includes("not found") ||
+        error.message?.includes("already been accepted") ||
+        error.message?.includes("expired") ||
+        error.message?.includes("different email") ||
+        error.message?.includes("already have access")) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to accept invitation",
+    });
+  }
+}

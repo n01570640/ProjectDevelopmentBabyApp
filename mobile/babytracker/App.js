@@ -1,57 +1,146 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import apiClient from './services/api';
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Provider } from "react-redux";
+import { store } from "./src/store";
+import { Platform } from "react-native";
+import * as Notifications from "expo-notifications";
 
-export default function App() {
-  const [status, setStatus] = useState('Loading...');
-  const [loading, setLoading] = useState(true);
+// Android: create notification channel with MAX importance for heads-up popups
+if (Platform.OS === "android") {
+  Notifications.setNotificationChannelAsync("default", {
+    name: "Default",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    sound: "default",
+  });
+}
 
-  useEffect(() => {
-    checkBackendConnection();
-  }, []);
+// Show notifications even when the app is in the foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
-  const checkBackendConnection = async () => {
-    try {
-      const data = await apiClient.get('/health');
-      setStatus(`✅ Backend Connected!\n${data.message}`);
-      setLoading(false);
-    } catch (error) {
-      setStatus(`❌ Backend Error: ${error.message}`);
-      setLoading(false);
-    }
-  };
+import Landing from "./src/components/landing";
+import Login from "./src/components/login";
+import Register from "./src/components/register";
+import ProfileScreen from "./src/components/ProfileScreen";
+import HistoryScreen from "./src/components/HistoryScreen";
+import ScheduleScreen from "./src/components/ScheduleScreen";
+import StatisticsScreen from "./src/components/StatisticsScreen";
+import AddChildScreen from "./src/components/AddChildScreen";
+import BabyDetailScreen from "./src/components/BabyDetailScreen";
+import AcceptInvitationScreen from "./src/components/AcceptInvitationScreen";
+import CustomTabBar from "./src/components/navBar";
+import ProfileHomeScreen from "./src/components/ProfileHomeScreen";
+import HomeScreen from "./src/components/HomeScreen";
+import Children from "./src/components/children";
 
+
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+const linking = {
+  prefixes: ["babytracker://"],
+  config: {
+    screens: {
+      AcceptInvitation: "invitations/:token",
+    },
+  },
+};
+
+const screenOptions = { headerShown: false };
+
+// ── Tab stacks (screens within each tab) ────────────────────────
+
+function HomeStack() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Hello baby</Text>
-
-      {loading ? (
-        <ActivityIndicator size="large" color="#007AFF" />
-      ) : (
-        <Text style={styles.status}>{status}</Text>
-      )}
-    </View>
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
+    </Stack.Navigator>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 30,
-  },
-  status: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 20,
-  },
-});
+function BabiesStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="BabiesList" component={Children} />
+      <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
+      <Stack.Screen name="AddChild" component={AddChildScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ScheduleStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="ScheduleHome" component={ScheduleScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function StatisticsStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="StatisticsHome" component={StatisticsScreen} />
+    </Stack.Navigator>
+  );
+}
+
+//changed to add new profile home
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={screenOptions}>
+      <Stack.Screen name="ProfileHome" component={ProfileHomeScreen} />
+      <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
+      <Stack.Screen name="History" component={HistoryScreen} />
+      <Stack.Screen name="BabyDetail" component={BabyDetailScreen} />
+      <Stack.Screen name="AddChild" component={AddChildScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// ── Main tabs (bottom tab navigator) ────────────────────────────
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={screenOptions}
+    >
+      <Tab.Screen name="HomeTab" component={HomeStack} />
+      <Tab.Screen name="BabiesTab" component={BabiesStack} />
+      <Tab.Screen name="ScheduleTab" component={ScheduleStack} />
+      <Tab.Screen name="StatisticsTab" component={StatisticsStack} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack} />
+    </Tab.Navigator>
+  );
+}
+
+// ── Root navigator (auth + main app) ────────────────────────────
+
+export default function App() {
+  return (
+    <Provider store={store}>
+      <SafeAreaProvider>
+        <NavigationContainer linking={linking}>
+          <Stack.Navigator initialRouteName="Landing" screenOptions={screenOptions}>
+            <Stack.Screen name="Landing" component={Landing} />
+            <Stack.Screen name="Login" component={Login} />
+            <Stack.Screen name="SignUp" component={Register} />
+            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="AcceptInvitation" component={AcceptInvitationScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </Provider>
+  );
+}
