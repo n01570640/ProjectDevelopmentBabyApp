@@ -4,7 +4,11 @@ A cross-platform mobile application for tracking baby activities and health.
 
 ## Project Status
 
-**Base Structure & Configuration** - This is an initial project setup with foundational structure and configurations. Core features are not yet implemented.
+Backend and mobile app are implemented. The backend (Node.js, Express, TypeScript) provides JWT authentication, role-based access for caregivers with per-baby permissions, caregiver invitations, tracking for activities, growth, medications, symptoms, vaccinations and tasks, a timeline and analytics, and a scheduled job that sends push-notification reminders. The mobile app is built with React Native (Expo) and Redux Toolkit.
+
+## Team Workflow
+
+The team worked in feature branches that were merged into `develop` through pull requests, then merged into `main`. The full history is in the closed pull requests and on the `develop` branch.
 
 ## Tech Stack
 
